@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>𝕏 Shooter Game</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            background-color: #000;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #1da1f2; /* Xの青をイメージ */
+        }
+        #gameOverScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        #resetButton {
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #startScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        #startButton {
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="gameOverScreen">
+        <h1>GAME OVER</h1>
+        <p>Free Speech Points: <span id="finalScore">0</span></p>
+        <button id="resetButton">リセット</button>
+    </div>
+    <div id="startScreen">
+        <h1>𝕏 Shooter Game</h1>
+        <button id="startButton">ゲーム開始</button>
+    </div>
+    <audio id="backgroundMusic" loop>
+        <source src="backgroundMusic.mp3" type="audio/mpeg">
+        あなたのブラウザはaudio要素をサポートしていません。
+    </audio>
+    <audio id="shootSound">
+        <source src="shoot.mp3" type="audio/mpeg">
+        あなたのブラウザはaudio要素をサポートしていません。
+    </audio>
+    <audio id="hitSound">
+        <source src="hit.mp3" type="audio/mpeg">
+        あなたのブラウザはaudio要素をサポートしていません。
+    </audio>
+
+    <script>
+        // ゲームの基本設定
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const resetButton = document.getElementById('resetButton');
+        const finalScore = document.getElementById('finalScore');
+        const startScreen = document.getElementById('startScreen');
+        const startButton = document.getElementById('startButton');
+        const backgroundMusic = document.getElementById('backgroundMusic');
+        const shootSound = document.getElementById('shootSound');
+        const hitSound = document.getElementById('hitSound');
+
+        // 音量設定（必要に応じて調整）
+        backgroundMusic.volume = 0.5;
+        shootSound.volume = 0.7;
+        hitSound.volume = 0.7;
+
+        // 画像の読み込み（外部ファイル）
+        let playerImageLoaded = false;
+        let enemyImagesLoaded = 0;
+        const MAX_ENEMIES = 10;
+
+        const playerImage = new Image();
+        const enemyImages = Array.from({ length: MAX_ENEMIES }, (_, i) => new Image());
+
+        playerImage.src = 'player.png';
+        enemyImages.forEach((img, i) => {
+            img.src = `enemy${i + 1}.png`;
+            img.onload = () => {
+                enemyImagesLoaded++;
+                checkImagesLoaded();
+            };
+            img.onerror = () => {
+                console.error(`Failed to load image: enemy${i + 1}.png`);
+                alert(`画像の読み込みに失敗しました: enemy${i + 1}.png`);
+            };
+        });
+
+        playerImage.onload = () => {
+            playerImageLoaded = true;
+            checkImagesLoaded();
+        };
+        playerImage.onerror = () => {
+            console.error(`Failed to load image: player.png`);
+            alert(`画像の読み込みに失敗しました: player.png`);
+        };
+
+        function checkImagesLoaded() {
+            if (playerImageLoaded && enemyImagesLoaded === MAX_ENEMIES) {
+                startScreen.style.display = 'block'; // 画像読み込み完了後、スタート画面を表示
+            }
+        }
+
+        // ゲームオブジェクト（プレイヤーに慣性を追加）
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            width: 60,
+            height: 60,
+            speed: 0.3,
+            rotation: 0,
+            rotationSpeed: Math.PI / 36,
+            velocityX: 0,
+            velocityY: 0
+        };
+
+        const bullets = [];
+        const enemies = [];
+        let freeSpeechPoints = 0;
+        let weaponLevel = 1;
+        let enemiesKilled = 0;
+        let gameRunning = false;
+        let gameStartTime = 0; // ゲーム開始時刻を記録
+
+        const friction = 0.95;
+
+        // 弾の設定
+        const bulletBase = {
+            width: 5,
+            height: 10,
+            speed: 7,
+            color: 'white'
+        };
+
+        // 敵の設定
+        const enemyConfigs = [
+            { speed: 0.5, points: 100, width: 60, height: 60 },
+            { speed: 0.6, points: 120, width: 60, height: 60 },
+            { speed: 0.4, points: 80, width: 60, height: 60 },
+            { speed: 0.7, points: 140, width: 68, height: 68 },
+            { speed: 0.3, points: 60, width: 53, height: 53 },
+            { speed: 0.8, points: 160, width: 75, height: 75 },
+            { speed: 0.5, points: 100, width: 60, height: 60 },
+            { speed: 0.6, points: 120, width: 60, height: 60 },
+            { speed: 0.4, points: 80, width: 60, height: 60 },
+            { speed: 0.9, points: 200, width: 83, height: 83 }
+        ];
+
+        let spawnInterval = 2000; // 初期スポーン間隔（2秒）
+        const minSpawnInterval = 200; // 最小スポーン間隔（0.5秒）
+        const spawnDecreaseRate = 50; // 間隔減少量（ミリ秒）
+        let lastEnemySpawn = Date.now();
+        let lastSpawnUpdate = Date.now(); // 最後に間隔を更新した時間
+
+        // 敵の速度増加設定
+        const speedIncreaseRate = 0.1; // 10秒ごとに速度が0.1増加
+        const maxSpeedMultiplier = 4.0; // 速度の最大倍率（元の2倍まで）
+
+        // キー入力の管理（矢印キーに変更）
+        const keys = {
+            ArrowUp: false,
+            ArrowDown: false,
+            ArrowLeft: false,
+            ArrowRight: false,
+            Space: false
+        };
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code in keys) keys[e.code] = true;
+            if (e.code === 'Space' && gameRunning) shoot();
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.code in keys) keys[e.code] = false;
+        });
+
+        // 弾を発射
+        function shoot() {
+            const bulletLevel = Math.min(weaponLevel, 5);
+            const bulletSpeed = bulletBase.speed + (bulletLevel - 1) * 2;
+            const bulletWidth = bulletBase.width + (bulletLevel - 1) * 2;
+            const bulletColor = bulletLevel === 5 ? 'gold' : 'white';
+
+            const baseAngle = player.rotation;
+            const spreadAngle = Math.PI / 12;
+
+            let bulletCount = bulletLevel;
+            if (bulletCount > 4) bulletCount = 4;
+
+            for (let i = 0; i < bulletCount; i++) {
+                const angleOffset = (i - (bulletCount - 1) / 2) * spreadAngle;
+                const angle = baseAngle + angleOffset;
+                const dx = Math.cos(angle) * bulletSpeed;
+                const dy = Math.sin(angle) * bulletSpeed;
+
+                bullets.push({
+                    x: player.x + player.width / 2 - bulletWidth / 2,
+                    y: player.y + player.height / 2 - bulletBase.height / 2,
+                    width: bulletWidth,
+                    height: bulletBase.height,
+                    speedX: dx,
+                    speedY: dy,
+                    color: bulletColor
+                });
+            }
+            // 射撃音を再生
+            shootSound.currentTime = 0; // 再生位置をリセット
+            shootSound.play().catch(error => console.error("Shoot sound playback failed:", error));
+        }
+
+        // 敵を生成（速度を時間経過で増加）
+        function spawnEnemy() {
+            const type = Math.floor(Math.random() * MAX_ENEMIES);
+            const config = enemyConfigs[type];
+            const elapsedTime = (Date.now() - gameStartTime) / 1000; // ゲーム開始からの秒数
+            const speedMultiplier = Math.min(1 + (elapsedTime / 10) * speedIncreaseRate, maxSpeedMultiplier);
+            const adjustedSpeed = config.speed * speedMultiplier;
+
+            const side = Math.floor(Math.random() * 4);
+            let x, y;
+            switch (side) {
+                case 0: x = Math.random() * canvas.width; y = -config.height; break;
+                case 1: x = canvas.width + config.width; y = Math.random() * canvas.height; break;
+                case 2: x = Math.random() * canvas.width; y = canvas.height + config.height; break;
+                case 3: x = -config.width; y = Math.random() * canvas.height; break;
+            }
+            enemies.push({
+                x: x,
+                y: y,
+                width: config.width,
+                height: config.height,
+                type: type,
+                speed: adjustedSpeed
+            });
+        }
+
+        // プレイヤーに向かって敵を移動
+        function moveTowardsPlayer(enemy) {
+            const dx = player.x + player.width / 2 - (enemy.x + enemy.width / 2);
+            const dy = player.y + player.height / 2 - (enemy.y + enemy.height / 2);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance !== 0) {
+                enemy.x += (dx / distance) * enemy.speed;
+                enemy.y += (dy / distance) * enemy.speed;
+            }
+        }
+
+        // 衝突判定
+        function checkCollision(rect1, rect2) {
+            return (
+                rect1.x < rect2.x + rect2.width &&
+                rect1.x + rect1.width > rect2.x &&
+                rect1.y < rect2.y + rect2.height &&
+                rect1.y + rect1.height > rect2.y
+            );
+        }
+
+        // プレイヤーの描画
+        function drawPlayer() {
+            ctx.save();
+            ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+            ctx.rotate(player.rotation);
+            ctx.drawImage(playerImage, -player.width / 2, -player.height / 2, player.width, player.height);
+            ctx.restore();
+        }
+
+        // プレイヤーの移動（矢印キーに変更）
+        function movePlayer() {
+            const angle = player.rotation;
+
+            if (keys.ArrowUp) {
+                player.velocityX += Math.cos(angle) * player.speed;
+                player.velocityY += Math.sin(angle) * player.speed;
+            }
+            if (keys.ArrowDown) {
+                player.velocityX -= Math.cos(angle) * player.speed;
+                player.velocityY -= Math.sin(angle) * player.speed;
+            }
+            if (keys.ArrowLeft) player.rotation -= player.rotationSpeed;
+            if (keys.ArrowRight) player.rotation += player.rotationSpeed;
+
+            player.x += player.velocityX;
+            player.y += player.velocityY;
+
+            player.velocityX *= friction;
+            player.velocityY *= friction;
+
+            if (player.x < 0) player.x = 0;
+            if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+            if (player.y < 0) player.y = 0;
+            if (player.y > canvas.height - player.height) player.y = canvas.height - player.height;
+
+            player.rotation = ((player.rotation + 2 * Math.PI) % (2 * Math.PI));
+        }
+
+        // ゲームリセット
+        function resetGame() {
+            player.x = canvas.width / 2;
+            player.y = canvas.height / 2;
+            player.rotation = 0;
+            player.velocityX = 0;
+            player.velocityY = 0;
+            bullets.length = 0;
+            enemies.length = 0;
+            freeSpeechPoints = 0;
+            weaponLevel = 1;
+            enemiesKilled = 0;
+            gameRunning = true;
+            gameOverScreen.style.display = 'none';
+            lastEnemySpawn = Date.now();
+            spawnInterval = 2000; // 初期値に戻す
+            lastSpawnUpdate = Date.now(); // スポーン間隔更新のタイマーリセット
+            gameStartTime = Date.now(); // ゲーム開始時刻をリセット
+            backgroundMusic.currentTime = 0; // BGMをリセット
+            backgroundMusic.play();          // BGM再生
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ゲームループ
+        function gameLoop(timestamp) {
+            if (!gameRunning) return;
+
+            movePlayer();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawPlayer();
+
+            bullets.forEach((bullet, bulletIndex) => {
+                bullet.x += bullet.speedX;
+                bullet.y += bullet.speedY;
+                ctx.fillStyle = bullet.color;
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+
+                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                    bullets.splice(bulletIndex, 1);
+                }
+            });
+
+            enemies.forEach((enemy, enemyIndex) => {
+                moveTowardsPlayer(enemy);
+                const config = enemyConfigs[enemy.type];
+                ctx.drawImage(enemyImages[enemy.type], enemy.x, enemy.y, config.width, config.height);
+
+                bullets.forEach((bullet, bulletIndex) => {
+                    if (checkCollision(bullet, enemy)) {
+                        enemies.splice(enemyIndex, 1);
+                        bullets.splice(bulletIndex, 1);
+                        freeSpeechPoints += config.points * weaponLevel;
+                        enemiesKilled++;
+                        weaponLevel = Math.floor(enemiesKilled / 5) + 1;
+                        // 命中音を再生
+                        hitSound.currentTime = 0; // 再生位置をリセット
+                        hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
+                    }
+                });
+
+                if (checkCollision(enemy, player)) {
+                    gameRunning = false;
+                    backgroundMusic.pause(); // ゲームオーバーでBGM停止
+                    finalScore.textContent = freeSpeechPoints;
+                    gameOverScreen.style.display = 'block';
+                }
+            });
+
+            // スポーン間隔を時間経過で減少させる（10秒ごとに減少）
+            if (Date.now() - lastSpawnUpdate > 10000) { // 10秒ごとに更新
+                spawnInterval = Math.max(minSpawnInterval, spawnInterval - spawnDecreaseRate);
+                lastSpawnUpdate = Date.now();
+                console.log(`Spawn Interval updated to: ${spawnInterval}ms`); // デバッグ用
+            }
+
+            // 敵のスポーン
+            if (Date.now() - lastEnemySpawn > spawnInterval) {
+                spawnEnemy();
+                lastEnemySpawn = Date.now();
+            }
+
+            // デバッグ用に現在の速度倍率を表示
+            const elapsedTime = (Date.now() - gameStartTime) / 1000;
+            const speedMultiplier = Math.min(1 + (elapsedTime / 10) * speedIncreaseRate, maxSpeedMultiplier);
+
+            ctx.fillStyle = 'white';
+            ctx.font = '16px Arial';
+            ctx.fillText(`Free Speech Points: ${freeSpeechPoints}`, 10, 20);
+            ctx.fillText(`Weapon Level: ${weaponLevel}/69`, 10, 40);
+            ctx.fillText(`Enemies Killed: ${enemiesKilled}`, 10, 60);
+            ctx.fillText(`Spawn Interval: ${Math.round(spawnInterval)}ms`, 10, 80);
+            ctx.fillText(`Speed Multiplier: ${speedMultiplier.toFixed(2)}x`, 10, 100); // 速度倍率を表示
+
+            if (gameRunning) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // ゲーム開始
+        function startGame() {
+            gameRunning = true;
+            gameStartTime = Date.now(); // ゲーム開始時刻を設定
+            startScreen.style.display = 'none'; // スタート画面を非表示
+            backgroundMusic.play();            // BGM再生
+            requestAnimationFrame(gameLoop);
+            console.log('Game started!');
+        }
+
+        // スタートボタンとリセットボタンのイベントリスナー
+        startButton.addEventListener('click', startGame);
+        resetButton.addEventListener('click', resetGame);
+
+        // エラー処理
+        [playerImage, ...enemyImages].forEach(img => {
+            img.onerror = () => {
+                console.error(`Failed to load image: ${img.src}`);
+                alert(`画像の読み込みに失敗しました: ${img.src}`);
+            };
+        });
+    </script>
+</body>
+</html>
