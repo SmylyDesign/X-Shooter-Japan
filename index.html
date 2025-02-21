@@ -2,11 +2,13 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!-- モバイル対応 -->
     <title>𝕏 Shooter Game</title>
     <style>
         canvas {
             border: 1px solid black;
             background-color: #000;
+            touch-action: none; /* タッチ操作時のデフォルト動作を無効化 */
         }
         body {
             display: flex;
@@ -15,6 +17,7 @@
             height: 100vh;
             margin: 0;
             background-color: #1da1f2; /* Xの青をイメージ */
+            overflow: hidden; /* スクロール防止 */
         }
         #gameOverScreen {
             position: absolute;
@@ -51,6 +54,39 @@
             font-size: 16px;
             cursor: pointer;
         }
+        /* タッチコントロールのスタイル */
+        #joystick {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 100px;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: none;
+            touch-action: none;
+        }
+        #joystickKnob {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            top: 50%;
+            left: 50%;
+        }
+        #shootButton {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 0, 0, 0.5);
+            border-radius: 50%;
+            display: none;
+            touch-action: none;
+        }
     </style>
 </head>
 <body>
@@ -64,6 +100,12 @@
         <h1>𝕏 Shooter Game</h1>
         <button id="startButton">ゲーム開始</button>
     </div>
+    <!-- タッチコントロール -->
+    <div id="joystick">
+        <div id="joystickKnob"></div>
+    </div>
+    <div id="shootButton"></div>
+
     <audio id="backgroundMusic" loop>
         <source src="backgroundMusic.mp3" type="audio/mpeg">
         あなたのブラウザはaudio要素をサポートしていません。
@@ -89,16 +131,19 @@
         const backgroundMusic = document.getElementById('backgroundMusic');
         const shootSound = document.getElementById('shootSound');
         const hitSound = document.getElementById('hitSound');
+        const joystick = document.getElementById('joystick');
+        const joystickKnob = document.getElementById('joystickKnob');
+        const shootButton = document.getElementById('shootButton');
 
-        // 音量設定（必要に応じて調整）
+        // 音量設定
         backgroundMusic.volume = 0.5;
         shootSound.volume = 0.7;
         hitSound.volume = 0.7;
 
-        // 画像の読み込み（外部ファイル）
+        // 画像の読み込み
         let playerImageLoaded = false;
         let enemyImagesLoaded = 0;
-        const MAX_ENEMIES = 10;
+        const MAX_ENEMIES = 12;
 
         const playerImage = new Image();
         const enemyImages = Array.from({ length: MAX_ENEMIES }, (_, i) => new Image());
@@ -127,11 +172,11 @@
 
         function checkImagesLoaded() {
             if (playerImageLoaded && enemyImagesLoaded === MAX_ENEMIES) {
-                startScreen.style.display = 'block'; // 画像読み込み完了後、スタート画面を表示
+                startScreen.style.display = 'block';
             }
         }
 
-        // ゲームオブジェクト（プレイヤーに慣性を追加）
+        // ゲームオブジェクト
         const player = {
             x: canvas.width / 2,
             y: canvas.height / 2,
@@ -150,7 +195,7 @@
         let weaponLevel = 1;
         let enemiesKilled = 0;
         let gameRunning = false;
-        let gameStartTime = 0; // ゲーム開始時刻を記録
+        let gameStartTime = 0;
 
         const friction = 0.95;
 
@@ -173,25 +218,31 @@
             { speed: 0.5, points: 100, width: 60, height: 60 },
             { speed: 0.6, points: 120, width: 60, height: 60 },
             { speed: 0.4, points: 80, width: 60, height: 60 },
-            { speed: 0.9, points: 200, width: 83, height: 83 }
+            { speed: 0.9, points: 200, width: 83, height: 83 },
+            { speed: 1.0, points: 250, width: 45, height: 45 },
+            { speed: 0.2, points: 300, width: 90, height: 90 }
         ];
 
-        let spawnInterval = 2000; // 初期スポーン間隔（2秒）
-        const minSpawnInterval = 200; // 最小スポーン間隔（0.5秒）
-        const spawnDecreaseRate = 50; // 間隔減少量（ミリ秒）
+        let spawnInterval = 2000;
+        const minSpawnInterval = 200;
+        const spawnDecreaseRate = 50;
         let lastEnemySpawn = Date.now();
-        let lastSpawnUpdate = Date.now(); // 最後に間隔を更新した時間
+        let lastSpawnUpdate = Date.now();
 
-        // 敵の速度増加設定
-        const speedIncreaseRate = 0.1; // 10秒ごとに速度が0.1増加
-        const maxSpeedMultiplier = 4.0; // 速度の最大倍率（元の2倍まで）
+        const speedIncreaseRate = 0.1;
+        const maxSpeedMultiplier = 4.0;
+        const explosionDuration = 150;
 
-        // キー入力の管理（矢印キーに変更）
+        // キー入力の管理
         const keys = {
             ArrowUp: false,
             ArrowDown: false,
             ArrowLeft: false,
             ArrowRight: false,
+            KeyW: false,
+            KeyS: false,
+            KeyA: false,
+            KeyD: false,
             Space: false
         };
 
@@ -202,6 +253,65 @@
 
         document.addEventListener('keyup', (e) => {
             if (e.code in keys) keys[e.code] = false;
+        });
+
+        // タッチコントロールの変数
+        let joystickActive = false;
+        let joystickStartX = 0;
+        let joystickStartY = 0;
+        let joystickDeltaX = 0;
+        let joystickDeltaY = 0;
+        let shootActive = false;
+
+        // ジョイスティックのタッチイベント
+        joystick.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            joystickActive = true;
+            joystickStartX = touch.clientX;
+            joystickStartY = touch.clientY;
+        });
+
+        joystick.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (!joystickActive) return;
+            const touch = e.touches[0];
+            joystickDeltaX = touch.clientX - joystickStartX;
+            joystickDeltaY = touch.clientY - joystickStartY;
+
+            const maxDistance = 50; // ジョイスティックの最大移動距離
+            const distance = Math.sqrt(joystickDeltaX * joystickDeltaX + joystickDeltaY * joystickDeltaY);
+            if (distance > maxDistance) {
+                const angle = Math.atan2(joystickDeltaY, joystickDeltaX);
+                joystickDeltaX = Math.cos(angle) * maxDistance;
+                joystickDeltaY = Math.sin(angle) * maxDistance;
+            }
+
+            joystickKnob.style.left = `${50 + joystickDeltaX}px`;
+            joystickKnob.style.top = `${50 + joystickDeltaY}px`;
+        });
+
+        joystick.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            joystickActive = false;
+            joystickDeltaX = 0;
+            joystickDeltaY = 0;
+            joystickKnob.style.left = '50%';
+            joystickKnob.style.top = '50%';
+        });
+
+        // 射撃ボタンのタッチイベント
+        shootButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (gameRunning) {
+                shootActive = true;
+                shoot();
+            }
+        });
+
+        shootButton.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            shootActive = false;
         });
 
         // 弾を発射
@@ -233,16 +343,15 @@
                     color: bulletColor
                 });
             }
-            // 射撃音を再生
-            shootSound.currentTime = 0; // 再生位置をリセット
+            shootSound.currentTime = 0;
             shootSound.play().catch(error => console.error("Shoot sound playback failed:", error));
         }
 
-        // 敵を生成（速度を時間経過で増加）
+        // 敵を生成
         function spawnEnemy() {
             const type = Math.floor(Math.random() * MAX_ENEMIES);
             const config = enemyConfigs[type];
-            const elapsedTime = (Date.now() - gameStartTime) / 1000; // ゲーム開始からの秒数
+            const elapsedTime = (Date.now() - gameStartTime) / 1000;
             const speedMultiplier = Math.min(1 + (elapsedTime / 10) * speedIncreaseRate, maxSpeedMultiplier);
             const adjustedSpeed = config.speed * speedMultiplier;
 
@@ -260,18 +369,23 @@
                 width: config.width,
                 height: config.height,
                 type: type,
-                speed: adjustedSpeed
+                speed: adjustedSpeed,
+                isExploding: false,
+                explosionStart: null,
+                scale: 1
             });
         }
 
         // プレイヤーに向かって敵を移動
         function moveTowardsPlayer(enemy) {
-            const dx = player.x + player.width / 2 - (enemy.x + enemy.width / 2);
-            const dy = player.y + player.height / 2 - (enemy.y + enemy.height / 2);
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance !== 0) {
-                enemy.x += (dx / distance) * enemy.speed;
-                enemy.y += (dy / distance) * enemy.speed;
+            if (!enemy.isExploding) {
+                const dx = player.x + player.width / 2 - (enemy.x + enemy.width / 2);
+                const dy = player.y + player.height / 2 - (enemy.y + enemy.height / 2);
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance !== 0) {
+                    enemy.x += (dx / distance) * enemy.speed;
+                    enemy.y += (dy / distance) * enemy.speed;
+                }
             }
         }
 
@@ -294,20 +408,33 @@
             ctx.restore();
         }
 
-        // プレイヤーの移動（矢印キーに変更）
+        // プレイヤーの移動
         function movePlayer() {
             const angle = player.rotation;
 
-            if (keys.ArrowUp) {
+            // キーボード入力
+            if (keys.ArrowUp || keys.KeyW) {
                 player.velocityX += Math.cos(angle) * player.speed;
                 player.velocityY += Math.sin(angle) * player.speed;
             }
-            if (keys.ArrowDown) {
+            if (keys.ArrowDown || keys.KeyS) {
                 player.velocityX -= Math.cos(angle) * player.speed;
                 player.velocityY -= Math.sin(angle) * player.speed;
             }
-            if (keys.ArrowLeft) player.rotation -= player.rotationSpeed;
-            if (keys.ArrowRight) player.rotation += player.rotationSpeed;
+            if (keys.ArrowLeft || keys.KeyA) player.rotation -= player.rotationSpeed;
+            if (keys.ArrowRight || keys.KeyD) player.rotation += player.rotationSpeed;
+
+            // ジョイスティック入力（移動速度を遅めに調整）
+            if (joystickActive) {
+                const magnitude = Math.sqrt(joystickDeltaX * joystickDeltaX + joystickDeltaY * joystickDeltaY);
+                if (magnitude > 10) { // デッドゾーン
+                    const joystickAngle = Math.atan2(joystickDeltaY, joystickDeltaX);
+                    const joystickSpeed = player.speed * 0.5; // 速度を半分に
+                    player.velocityX += Math.cos(joystickAngle) * joystickSpeed;
+                    player.velocityY += Math.sin(joystickAngle) * joystickSpeed;
+                    player.rotation = joystickAngle;
+                }
+            }
 
             player.x += player.velocityX;
             player.y += player.velocityY;
@@ -338,11 +465,13 @@
             gameRunning = true;
             gameOverScreen.style.display = 'none';
             lastEnemySpawn = Date.now();
-            spawnInterval = 2000; // 初期値に戻す
-            lastSpawnUpdate = Date.now(); // スポーン間隔更新のタイマーリセット
-            gameStartTime = Date.now(); // ゲーム開始時刻をリセット
-            backgroundMusic.currentTime = 0; // BGMをリセット
-            backgroundMusic.play();          // BGM再生
+            spawnInterval = 2000;
+            lastSpawnUpdate = Date.now();
+            gameStartTime = Date.now();
+            backgroundMusic.currentTime = 0;
+            backgroundMusic.play();
+            joystick.style.display = 'block'; // タッチコントロールを表示
+            shootButton.style.display = 'block';
             requestAnimationFrame(gameLoop);
         }
 
@@ -366,45 +495,61 @@
             });
 
             enemies.forEach((enemy, enemyIndex) => {
-                moveTowardsPlayer(enemy);
                 const config = enemyConfigs[enemy.type];
-                ctx.drawImage(enemyImages[enemy.type], enemy.x, enemy.y, config.width, config.height);
 
-                bullets.forEach((bullet, bulletIndex) => {
-                    if (checkCollision(bullet, enemy)) {
+                if (enemy.isExploding) {
+                    const elapsed = Date.now() - enemy.explosionStart;
+                    const progress = elapsed / explosionDuration;
+                    if (progress >= 1) {
                         enemies.splice(enemyIndex, 1);
-                        bullets.splice(bulletIndex, 1);
-                        freeSpeechPoints += config.points * weaponLevel;
-                        enemiesKilled++;
-                        weaponLevel = Math.floor(enemiesKilled / 5) + 1;
-                        // 命中音を再生
-                        hitSound.currentTime = 0; // 再生位置をリセット
-                        hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
+                    } else {
+                        enemy.scale = 1 + progress;
+                        const alpha = 1 - progress;
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
+                        ctx.scale(enemy.scale, enemy.scale);
+                        ctx.drawImage(enemyImages[enemy.type], -enemy.width / 2, -enemy.height / 2, config.width, config.height);
+                        ctx.restore();
                     }
-                });
+                } else {
+                    moveTowardsPlayer(enemy);
+                    ctx.drawImage(enemyImages[enemy.type], enemy.x, enemy.y, config.width, config.height);
 
-                if (checkCollision(enemy, player)) {
-                    gameRunning = false;
-                    backgroundMusic.pause(); // ゲームオーバーでBGM停止
-                    finalScore.textContent = freeSpeechPoints;
-                    gameOverScreen.style.display = 'block';
+                    bullets.forEach((bullet, bulletIndex) => {
+                        if (checkCollision(bullet, enemy)) {
+                            enemy.isExploding = true;
+                            enemy.explosionStart = Date.now();
+                            bullets.splice(bulletIndex, 1);
+                            freeSpeechPoints += config.points * weaponLevel;
+                            enemiesKilled++;
+                            weaponLevel = Math.floor(enemiesKilled / 5) + 1;
+                            hitSound.currentTime = 0;
+                            hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
+                        }
+                    });
+
+                    if (checkCollision(enemy, player)) {
+                        gameRunning = false;
+                        backgroundMusic.pause();
+                        finalScore.textContent = freeSpeechPoints;
+                        gameOverScreen.style.display = 'block';
+                        joystick.style.display = 'none'; // ゲームオーバーで非表示
+                        shootButton.style.display = 'none';
+                    }
                 }
             });
 
-            // スポーン間隔を時間経過で減少させる（10秒ごとに減少）
-            if (Date.now() - lastSpawnUpdate > 10000) { // 10秒ごとに更新
+            if (Date.now() - lastSpawnUpdate > 10000) {
                 spawnInterval = Math.max(minSpawnInterval, spawnInterval - spawnDecreaseRate);
                 lastSpawnUpdate = Date.now();
-                console.log(`Spawn Interval updated to: ${spawnInterval}ms`); // デバッグ用
             }
 
-            // 敵のスポーン
             if (Date.now() - lastEnemySpawn > spawnInterval) {
                 spawnEnemy();
                 lastEnemySpawn = Date.now();
             }
 
-            // デバッグ用に現在の速度倍率を表示
             const elapsedTime = (Date.now() - gameStartTime) / 1000;
             const speedMultiplier = Math.min(1 + (elapsedTime / 10) * speedIncreaseRate, maxSpeedMultiplier);
 
@@ -414,7 +559,7 @@
             ctx.fillText(`Weapon Level: ${weaponLevel}/69`, 10, 40);
             ctx.fillText(`Enemies Killed: ${enemiesKilled}`, 10, 60);
             ctx.fillText(`Spawn Interval: ${Math.round(spawnInterval)}ms`, 10, 80);
-            ctx.fillText(`Speed Multiplier: ${speedMultiplier.toFixed(2)}x`, 10, 100); // 速度倍率を表示
+            ctx.fillText(`Speed Multiplier: ${speedMultiplier.toFixed(2)}x`, 10, 100);
 
             if (gameRunning) {
                 requestAnimationFrame(gameLoop);
@@ -424,14 +569,16 @@
         // ゲーム開始
         function startGame() {
             gameRunning = true;
-            gameStartTime = Date.now(); // ゲーム開始時刻を設定
-            startScreen.style.display = 'none'; // スタート画面を非表示
-            backgroundMusic.play();            // BGM再生
+            gameStartTime = Date.now();
+            startScreen.style.display = 'none';
+            backgroundMusic.play();
+            joystick.style.display = 'block'; // ゲーム開始時に表示
+            shootButton.style.display = 'block';
             requestAnimationFrame(gameLoop);
             console.log('Game started!');
         }
 
-        // スタートボタンとリセットボタンのイベントリスナー
+        // イベントリスナー
         startButton.addEventListener('click', startGame);
         resetButton.addEventListener('click', resetGame);
 
