@@ -19,7 +19,7 @@
             background-color: #1da1f2;
             overflow: hidden;
         }
-        #gameOverScreen {
+        #gameOverScreen, #gameClearScreen {
             position: absolute;
             top: 50%;
             left: 50%;
@@ -95,6 +95,11 @@
         <p>Free Speech Points: <span id="finalScore">0</span></p>
         <button id="resetButton">リセット</button>
     </div>
+    <div id="gameClearScreen">
+        <h1>GAME CLEAR</h1>
+        <p>Free Speech Points: <span id="clearScore">0</span></p>
+        <button id="resetButtonClear">リセット</button>
+    </div>
     <div id="startScreen">
         <h1>𝕏 Shooter Game</h1>
         <button id="startButton">ゲーム開始</button>
@@ -120,19 +125,32 @@
         <source src="levelUp.mp3" type="audio/mpeg">
         あなたのブラウザはaudio要素をサポートしていません。
     </audio>
+    <audio id="bossDeflectSound">
+        <source src="boss_deflect.mp3" type="audio/mpeg">
+        あなたのブラウザはaudio要素をサポートしていません。
+    </audio>
+    <audio id="bossExplodeSound">
+        <source src="boss_explode.mp3" type="audio/mpeg">
+        あなたのブラウザはaudio要素をサポートしていません。
+    </audio>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const gameOverScreen = document.getElementById('gameOverScreen');
+        const gameClearScreen = document.getElementById('gameClearScreen');
         const resetButton = document.getElementById('resetButton');
+        const resetButtonClear = document.getElementById('resetButtonClear');
         const finalScore = document.getElementById('finalScore');
+        const clearScore = document.getElementById('clearScore');
         const startScreen = document.getElementById('startScreen');
         const startButton = document.getElementById('startButton');
         const backgroundMusic = document.getElementById('backgroundMusic');
         const shootSound = document.getElementById('shootSound');
         const hitSound = document.getElementById('hitSound');
-        const levelUpSound = document.getElementById('levelUpSound'); // レベルアップ音の取得
+        const levelUpSound = document.getElementById('levelUpSound');
+        const bossDeflectSound = document.getElementById('bossDeflectSound');
+        const bossExplodeSound = document.getElementById('bossExplodeSound');
         const joystick = document.getElementById('joystick');
         const joystickKnob = document.getElementById('joystickKnob');
         const shootButton = document.getElementById('shootButton');
@@ -140,39 +158,38 @@
         backgroundMusic.volume = 0.5;
         shootSound.volume = 0.7;
         hitSound.volume = 0.7;
-        levelUpSound.volume = 0.7; // レベルアップ音の音量設定
+        levelUpSound.volume = 0.7;
+        bossDeflectSound.volume = 0.7;
+        bossExplodeSound.volume = 0.9;
 
         let playerImageLoaded = false;
         let enemyImagesLoaded = 0;
-        const MAX_ENEMIES = 12;
+        let laserImageLoaded = false;
+        let bossImageLoaded = false;
+        const MAX_ENEMIES = 13;
 
         const playerImage = new Image();
         const enemyImages = Array.from({ length: MAX_ENEMIES }, (_, i) => new Image());
+        const laserImage = new Image();
+        const bossImage = new Image();
 
         playerImage.src = 'player.png';
+        laserImage.src = 'laser.png';
+        bossImage.src = 'boss.png';
         enemyImages.forEach((img, i) => {
             img.src = `enemy${i + 1}.png`;
             img.onload = () => {
                 enemyImagesLoaded++;
                 checkImagesLoaded();
             };
-            img.onerror = () => {
-                console.error(`Failed to load image: enemy${i + 1}.png`);
-                alert(`画像の読み込みに失敗しました: enemy${i + 1}.png`);
-            };
         });
 
-        playerImage.onload = () => {
-            playerImageLoaded = true;
-            checkImagesLoaded();
-        };
-        playerImage.onerror = () => {
-            console.error(`Failed to load image: player.png`);
-            alert(`画像の読み込みに失敗しました: player.png`);
-        };
+        playerImage.onload = () => { playerImageLoaded = true; checkImagesLoaded(); };
+        laserImage.onload = () => { laserImageLoaded = true; checkImagesLoaded(); };
+        bossImage.onload = () => { bossImageLoaded = true; checkImagesLoaded(); };
 
         function checkImagesLoaded() {
-            if (playerImageLoaded && enemyImagesLoaded === MAX_ENEMIES) {
+            if (playerImageLoaded && enemyImagesLoaded === MAX_ENEMIES && laserImageLoaded && bossImageLoaded) {
                 startScreen.style.display = 'block';
             }
         }
@@ -190,24 +207,22 @@
         };
 
         const bullets = [];
+        const lasers = [];
         const enemies = [];
         const levelUpPoints = [];
+        let boss = null;
+        let bossSpawned = false;
         let freeSpeechPoints = 0;
         let weaponLevel = 1;
-        const MAX_WEAPON_LEVEL = 7;
+        const MAX_WEAPON_LEVEL = 8;
         let enemiesKilled = 0;
+        let enemiesKilledAfterLevel8 = 0;
         let gameRunning = false;
         let gameStartTime = 0;
 
         const friction = 0.95;
-
-        const bulletBase = {
-            width: 5,
-            height: 10,
-            speed: 7,
-            color: 'white'
-        };
-
+        const bulletBase = { width: 5, height: 10, speed: 7, color: 'white' };
+        const laserBase = { size: laserImage.width || 30, speed: 5, lineLength: 100 };
         const enemyConfigs = [
             { speed: 0.5, points: 100, width: 60, height: 60 },
             { speed: 0.6, points: 120, width: 60, height: 60 },
@@ -220,45 +235,41 @@
             { speed: 0.4, points: 80, width: 60, height: 60 },
             { speed: 0.9, points: 200, width: 83, height: 83 },
             { speed: 1.0, points: 250, width: 45, height: 45 },
-            { speed: 0.2, points: 300, width: 90, height: 90 }
+            { speed: 0.2, points: 300, width: 90, height: 90 },
+            { speed: 0.55, points: 150, width: 70, height: 70 }
         ];
+
+        const bossConfig = {
+            width: 150,
+            height: 150,
+            speed: 0.4,
+            health: 200,
+            maxHealth: 200,
+            flashDuration: 100,
+            fadeDuration: 200
+        };
 
         let spawnInterval = 2000;
         const minSpawnInterval = 200;
         const spawnDecreaseRate = 50;
         let lastEnemySpawn = Date.now();
         let lastSpawnUpdate = Date.now();
-
         const speedIncreaseRate = 0.1;
         const maxSpeedMultiplier = 4.0;
         const explosionDuration = 150;
 
         const keys = {
-            ArrowUp: false,
-            ArrowDown: false,
-            ArrowLeft: false,
-            ArrowRight: false,
-            KeyW: false,
-            KeyS: false,
-            KeyA: false,
-            KeyD: false,
-            Space: false
+            ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+            KeyW: false, KeyS: false, KeyA: false, KeyD: false, Space: false
         };
 
         document.addEventListener('keydown', (e) => {
             if (e.code in keys) keys[e.code] = true;
             if (e.code === 'Space' && gameRunning) shoot();
         });
+        document.addEventListener('keyup', (e) => { if (e.code in keys) keys[e.code] = false; });
 
-        document.addEventListener('keyup', (e) => {
-            if (e.code in keys) keys[e.code] = false;
-        });
-
-        let joystickActive = false;
-        let joystickStartX = 0;
-        let joystickStartY = 0;
-        let joystickDeltaX = 0;
-        let joystickDeltaY = 0;
+        let joystickActive = false, joystickStartX = 0, joystickStartY = 0, joystickDeltaX = 0, joystickDeltaY = 0;
         let shootActive = false;
 
         joystick.addEventListener('touchstart', (e) => {
@@ -275,7 +286,6 @@
             const touch = e.touches[0];
             joystickDeltaX = touch.clientX - joystickStartX;
             joystickDeltaY = touch.clientY - joystickStartY;
-
             const maxDistance = 50;
             const distance = Math.sqrt(joystickDeltaX * joystickDeltaX + joystickDeltaY * joystickDeltaY);
             if (distance > maxDistance) {
@@ -283,7 +293,6 @@
                 joystickDeltaX = Math.cos(angle) * maxDistance;
                 joystickDeltaY = Math.sin(angle) * maxDistance;
             }
-
             joystickKnob.style.left = `${50 + joystickDeltaX}px`;
             joystickKnob.style.top = `${50 + joystickDeltaY}px`;
         });
@@ -299,16 +308,9 @@
 
         shootButton.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            if (gameRunning) {
-                shootActive = true;
-                shoot();
-            }
+            if (gameRunning) { shootActive = true; shoot(); }
         });
-
-        shootButton.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            shootActive = false;
-        });
+        shootButton.addEventListener('touchend', (e) => { e.preventDefault(); shootActive = false; });
 
         function shoot() {
             const bulletLevel = Math.min(weaponLevel, MAX_WEAPON_LEVEL);
@@ -318,16 +320,13 @@
 
             const baseAngle = player.rotation;
             const spreadAngle = Math.PI / 12;
-
-            let bulletCount = bulletLevel;
-            if (bulletCount > 4) bulletCount = 4;
+            let bulletCount = bulletLevel > 4 ? 4 : bulletLevel;
 
             for (let i = 0; i < bulletCount; i++) {
                 const angleOffset = (i - (bulletCount - 1) / 2) * spreadAngle;
                 const angle = baseAngle + angleOffset;
                 const dx = Math.cos(angle) * bulletSpeed;
                 const dy = Math.sin(angle) * bulletSpeed;
-
                 bullets.push({
                     x: player.x + player.width / 2 - bulletWidth / 2,
                     y: player.y + player.height / 2 - bulletBase.height / 2,
@@ -336,6 +335,34 @@
                     speedX: dx,
                     speedY: dy,
                     color: bulletColor
+                });
+            }
+
+            if (weaponLevel >= 8) {
+                const laserAngle = baseAngle;
+                const laserDx = Math.cos(laserAngle) * laserBase.speed;
+                const laserDy = Math.sin(laserAngle) * laserBase.speed;
+                lasers.push({
+                    x: player.x + player.width / 2 - laserBase.size / 2,
+                    y: player.y - laserBase.size,
+                    width: laserBase.lineLength,
+                    height: laserBase.size,
+                    speedX: laserDx,
+                    speedY: laserDy,
+                    angle: laserAngle,
+                    oscillation: 0,
+                    oscillationPhase: 0
+                });
+                lasers.push({
+                    x: player.x + player.width / 2 - laserBase.size / 2,
+                    y: player.y + player.height,
+                    width: laserBase.lineLength,
+                    height: laserBase.size,
+                    speedX: laserDx,
+                    speedY: laserDy,
+                    angle: laserAngle,
+                    oscillation: 0,
+                    oscillationPhase: Math.PI
                 });
             }
             shootSound.currentTime = 0;
@@ -370,6 +397,25 @@
             });
         }
 
+        function spawnBoss() {
+            boss = {
+                x: canvas.width / 2 - bossConfig.width / 2,
+                y: -bossConfig.height,
+                width: bossConfig.width,
+                height: bossConfig.height,
+                speed: bossConfig.speed,
+                health: bossConfig.health,
+                flashStart: null,
+                flash: false,
+                isExploding: false,
+                explosionStart: null,
+                scale: 1,
+                opacity: 1,
+                fadeStart: null
+            };
+            bossSpawned = true;
+        }
+
         function spawnLevelUpPoint(x, y) {
             levelUpPoints.push({
                 x: x,
@@ -381,14 +427,14 @@
             });
         }
 
-        function moveTowardsPlayer(enemy) {
-            if (!enemy.isExploding) {
-                const dx = player.x + player.width / 2 - (enemy.x + enemy.width / 2);
-                const dy = player.y + player.height / 2 - (enemy.y + enemy.height / 2);
+        function moveTowardsPlayer(obj) {
+            if (!obj.isExploding) {
+                const dx = player.x + player.width / 2 - (obj.x + obj.width / 2);
+                const dy = player.y + player.height / 2 - (obj.y + obj.height / 2);
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance !== 0) {
-                    enemy.x += (dx / distance) * enemy.speed;
-                    enemy.y += (dy / distance) * enemy.speed;
+                    obj.x += (dx / distance) * obj.speed;
+                    obj.y += (dy / distance) * obj.speed;
                 }
             }
         }
@@ -407,12 +453,71 @@
             ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
             ctx.rotate(player.rotation);
             ctx.drawImage(playerImage, -player.width / 2, -player.height / 2, player.width, player.height);
+            if (weaponLevel >= 8) {
+                const oscillationTop = Math.sin(Date.now() * 0.01) * 5;
+                const oscillationBottom = Math.sin(Date.now() * 0.01 + Math.PI) * 5;
+                ctx.save();
+                ctx.translate(-laserBase.size / 2, -player.height / 2 - laserBase.size + oscillationTop);
+                ctx.drawImage(laserImage, 0, 0, laserBase.size, laserBase.size);
+                ctx.restore();
+                ctx.save();
+                ctx.translate(-laserBase.size / 2, player.height / 2 + oscillationBottom);
+                ctx.drawImage(laserImage, 0, 0, laserBase.size, laserBase.size);
+                ctx.restore();
+            }
             ctx.restore();
+        }
+
+        function drawBoss() {
+            if (boss) {
+                ctx.save();
+                if (boss.isExploding) {
+                    const elapsed = Date.now() - boss.explosionStart;
+                    const progress = elapsed / explosionDuration;
+                    if (progress >= 1) {
+                        gameRunning = false;
+                        backgroundMusic.pause();
+                        clearScore.textContent = freeSpeechPoints;
+                        gameClearScreen.style.display = 'block';
+                        joystick.style.display = 'none';
+                        shootButton.style.display = 'none';
+                        boss = null;
+                    } else {
+                        boss.scale = 1 + progress;
+                        const alpha = 1 - progress;
+                        ctx.globalAlpha = alpha;
+                        ctx.translate(boss.x + boss.width / 2, boss.y + boss.height / 2);
+                        ctx.scale(boss.scale, boss.scale);
+                        ctx.drawImage(bossImage, -boss.width / 2, -boss.height / 2, boss.width, boss.height);
+                    }
+                } else {
+                    if (boss.fadeStart && Date.now() - boss.fadeStart < bossConfig.fadeDuration) {
+                        const elapsed = Date.now() - boss.fadeStart;
+                        const progress = elapsed / bossConfig.fadeDuration;
+                        boss.opacity = 0.5 + progress * 0.5;
+                    } else {
+                        boss.opacity = 1;
+                    }
+                    ctx.globalAlpha = boss.opacity;
+
+                    if (boss.flash && Date.now() - boss.flashStart < bossConfig.flashDuration) {
+                        ctx.filter = 'brightness(2)';
+                    }
+                    ctx.drawImage(bossImage, boss.x, boss.y, boss.width, boss.height);
+                    const healthBarWidth = boss.width;
+                    const healthBarHeight = 10;
+                    const healthRatio = boss.health / bossConfig.maxHealth;
+                    ctx.fillStyle = 'red';
+                    ctx.fillRect(boss.x, boss.y - 20, healthBarWidth, healthBarHeight);
+                    ctx.fillStyle = 'green';
+                    ctx.fillRect(boss.x, boss.y - 20, healthBarWidth * healthRatio, healthBarHeight);
+                }
+                ctx.restore();
+            }
         }
 
         function movePlayer() {
             const angle = player.rotation;
-
             if (keys.ArrowUp || keys.KeyW) {
                 player.velocityX += Math.cos(angle) * player.speed;
                 player.velocityY += Math.sin(angle) * player.speed;
@@ -437,15 +542,11 @@
 
             player.x += player.velocityX;
             player.y += player.velocityY;
-
             player.velocityX *= friction;
             player.velocityY *= friction;
 
-            if (player.x < 0) player.x = 0;
-            if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
-            if (player.y < 0) player.y = 0;
-            if (player.y > canvas.height - player.height) player.y = canvas.height - player.height;
-
+            player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+            player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
             player.rotation = ((player.rotation + 2 * Math.PI) % (2 * Math.PI));
         }
 
@@ -456,13 +557,18 @@
             player.velocityX = 0;
             player.velocityY = 0;
             bullets.length = 0;
+            lasers.length = 0;
             enemies.length = 0;
             levelUpPoints.length = 0;
+            boss = null;
+            bossSpawned = false;
             freeSpeechPoints = 0;
             weaponLevel = 1;
             enemiesKilled = 0;
+            enemiesKilledAfterLevel8 = 0;
             gameRunning = true;
             gameOverScreen.style.display = 'none';
+            gameClearScreen.style.display = 'none';
             lastEnemySpawn = Date.now();
             spawnInterval = 2000;
             lastSpawnUpdate = Date.now();
@@ -492,9 +598,28 @@
                 }
             });
 
+            lasers.forEach((laser, laserIndex) => {
+                laser.x += laser.speedX;
+                laser.y += laser.speedY;
+                laser.oscillation = Math.sin(Date.now() * 0.01 + laser.oscillationPhase) * 5;
+                ctx.save();
+                ctx.translate(laser.x + laserBase.size / 2, laser.y + laserBase.size / 2);
+                ctx.rotate(laser.angle);
+                ctx.strokeStyle = 'cyan';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(laserBase.lineLength + laser.oscillation, 0);
+                ctx.stroke();
+                ctx.restore();
+
+                if (laser.x < 0 || laser.x > canvas.width || laser.y < 0 || laser.y > canvas.height) {
+                    lasers.splice(laserIndex, 1);
+                }
+            });
+
             enemies.forEach((enemy, enemyIndex) => {
                 const config = enemyConfigs[enemy.type];
-
                 if (enemy.isExploding) {
                     const elapsed = Date.now() - enemy.explosionStart;
                     const progress = elapsed / explosionDuration;
@@ -521,15 +646,44 @@
                             bullets.splice(bulletIndex, 1);
                             freeSpeechPoints += config.points * weaponLevel;
                             enemiesKilled++;
+                            if (weaponLevel >= 8) {
+                                enemiesKilledAfterLevel8++;
+                            }
                             if (enemiesKilled % 5 === 0 && weaponLevel < MAX_WEAPON_LEVEL) {
                                 spawnLevelUpPoint(enemy.x, enemy.y);
                             }
                             hitSound.currentTime = 0;
                             hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
+
+                            if (weaponLevel >= 8 && enemiesKilledAfterLevel8 === 15 && !bossSpawned) {
+                                spawnBoss();
+                            }
                         }
                     });
 
-                    if (checkCollision(enemy, player)) {
+                    lasers.forEach((laser, laserIndex) => {
+                        if (checkCollision(laser, enemy)) {
+                            enemy.isExploding = true;
+                            enemy.explosionStart = Date.now();
+                            freeSpeechPoints += config.points * weaponLevel;
+                            enemiesKilled++;
+                            if (weaponLevel >= 8) {
+                                enemiesKilledAfterLevel8++;
+                            }
+                            if (enemiesKilled % 5 === 0 && weaponLevel < MAX_WEAPON_LEVEL) {
+                                spawnLevelUpPoint(enemy.x, enemy.y);
+                            }
+                            hitSound.currentTime = 0;
+                            hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
+
+                            if (weaponLevel >= 8 && enemiesKilledAfterLevel8 === 15 && !bossSpawned) {
+                                spawnBoss();
+                            }
+                        }
+                    });
+
+                    // プレイヤー本体のみが敵に接触した場合にゲームオーバー
+                    if (checkCollision(player, enemy)) {
                         gameRunning = false;
                         backgroundMusic.pause();
                         finalScore.textContent = freeSpeechPoints;
@@ -540,21 +694,76 @@
                 }
             });
 
+            if (boss) {
+                if (!boss.isExploding) {
+                    moveTowardsPlayer(boss);
+                }
+                drawBoss();
+
+                if (!boss.isExploding) {
+                    bullets.forEach((bullet, bulletIndex) => {
+                        if (checkCollision(bullet, boss)) {
+                            boss.health--;
+                            boss.flash = true;
+                            boss.flashStart = Date.now();
+                            boss.fadeStart = Date.now();
+                            bullets.splice(bulletIndex, 1);
+                            if (boss.health > 0) {
+                                bossDeflectSound.currentTime = 0;
+                                bossDeflectSound.play().catch(error => console.error("Boss deflect sound playback failed:", error));
+                            } else {
+                                boss.isExploding = true;
+                                boss.explosionStart = Date.now();
+                                bossExplodeSound.currentTime = 0;
+                                bossExplodeSound.play().catch(error => console.error("Boss explode sound playback failed:", error));
+                            }
+                        }
+                    });
+
+                    lasers.forEach((laser, laserIndex) => {
+                        if (checkCollision(laser, boss)) {
+                            boss.health--;
+                            boss.flash = true;
+                            boss.flashStart = Date.now();
+                            boss.fadeStart = Date.now();
+                            lasers.splice(laserIndex, 1);
+                            if (boss.health > 0) {
+                                bossDeflectSound.currentTime = 0;
+                                bossDeflectSound.play().catch(error => console.error("Boss deflect sound playback failed:", error));
+                            } else {
+                                boss.isExploding = true;
+                                boss.explosionStart = Date.now();
+                                bossExplodeSound.currentTime = 0;
+                                bossExplodeSound.play().catch(error => console.error("Boss explode sound playback failed:", error));
+                            }
+                        }
+                    });
+
+                    // プレイヤー本体のみがボスに接触した場合にゲームオーバー
+                    if (checkCollision(player, boss)) {
+                        gameRunning = false;
+                        backgroundMusic.pause();
+                        finalScore.textContent = freeSpeechPoints;
+                        gameOverScreen.style.display = 'block';
+                        joystick.style.display = 'none';
+                        shootButton.style.display = 'none';
+                    }
+                }
+            }
+
             levelUpPoints.forEach((point, pointIndex) => {
                 if (Date.now() - point.spawnTime > point.lifespan) {
                     levelUpPoints.splice(pointIndex, 1);
                     return;
                 }
-
                 ctx.fillStyle = 'yellow';
                 ctx.beginPath();
                 ctx.arc(point.x + point.width / 2, point.y + point.height / 2, point.width / 2, 0, Math.PI * 2);
                 ctx.fill();
-
                 if (checkCollision(player, point)) {
                     if (weaponLevel < MAX_WEAPON_LEVEL) {
                         weaponLevel++;
-                        levelUpSound.currentTime = 0; // 音を最初から再生
+                        levelUpSound.currentTime = 0;
                         levelUpSound.play().catch(error => console.error("Level up sound playback failed:", error));
                     }
                     levelUpPoints.splice(pointIndex, 1);
@@ -579,8 +788,12 @@
             ctx.fillText(`Free Speech Points: ${freeSpeechPoints}`, 10, 20);
             ctx.fillText(`Weapon Level: ${weaponLevel}/${MAX_WEAPON_LEVEL}`, 10, 40);
             ctx.fillText(`Enemies Killed: ${enemiesKilled}`, 10, 60);
-            ctx.fillText(`Spawn Interval: ${Math.round(spawnInterval)}ms`, 10, 80);
-            ctx.fillText(`Speed Multiplier: ${speedMultiplier.toFixed(2)}x`, 10, 100);
+            ctx.fillText(`Enemies Killed After Lv8: ${enemiesKilledAfterLevel8}`, 10, 80);
+            ctx.fillText(`Spawn Interval: ${Math.round(spawnInterval)}ms`, 10, 100);
+            ctx.fillText(`Speed Multiplier: ${speedMultiplier.toFixed(2)}x`, 10, 120);
+            if (boss) {
+                ctx.fillText(`Boss Health: ${boss.health}/${bossConfig.maxHealth}`, 10, 140);
+            }
 
             if (gameRunning) {
                 requestAnimationFrame(gameLoop);
@@ -595,13 +808,13 @@
             joystick.style.display = 'block';
             shootButton.style.display = 'block';
             requestAnimationFrame(gameLoop);
-            console.log('Game started!');
         }
 
         startButton.addEventListener('click', startGame);
         resetButton.addEventListener('click', resetGame);
+        resetButtonClear.addEventListener('click', resetGame);
 
-        [playerImage, ...enemyImages].forEach(img => {
+        [playerImage, ...enemyImages, laserImage, bossImage].forEach(img => {
             img.onerror = () => {
                 console.error(`Failed to load image: ${img.src}`);
                 alert(`画像の読み込みに失敗しました: ${img.src}`);
