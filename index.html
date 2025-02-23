@@ -10,7 +10,6 @@
         canvas {
             border: 1px solid black;
             background-color: #000;
-            touch-action: none;
         }
         body {
             display: flex;
@@ -61,37 +60,17 @@
             top: 10px;
             right: 10px;
         }
-        #joystick {
+        #mobileMessage {
             position: absolute;
-            bottom: 20px;
-            left: 20px;
-            width: 100px;
-            height: 100px;
-            background: rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            display: none;
-            touch-action: none;
-        }
-        #joystickKnob {
-            position: absolute;
-            width: 40px;
-            height: 40px;
-            background: rgba(255, 255, 255, 0.5);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
             top: 50%;
             left: 50%;
-        }
-        #shootButton {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 80px;
-            height: 80px;
-            background: rgba(255, 0, 0, 0.5);
-            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
             display: none;
-            touch-action: none;
         }
     </style>
 </head>
@@ -111,12 +90,11 @@
         <h1>𝕏 Shooter Japan</h1>
         <button id="startButton">ゲーム開始</button>
     </div>
+    <div id="mobileMessage">
+        <p>モバイル端末では動作しません。<br>キーボード付きPCのWEBブラウザでお楽しみください。</p>
+    </div>
     <button id="controlButton" class="btn btn-primary" style="display: none;">操作方法</button>
     <button id="pauseButton" class="btn btn-primary" style="display: none;">操作方法・一時停止</button>
-    <div id="joystick">
-        <div id="joystickKnob"></div>
-    </div>
-    <div id="shootButton"></div>
 
     <!-- Bootstrap 5 Modal -->
     <div class="modal fade" id="controlModal" tabindex="-1" aria-labelledby="controlModalLabel" aria-hidden="true">
@@ -132,14 +110,9 @@
                         <li>移動: 矢印キー または W/A/S/D</li>
                         <li>射撃: スペースキー</li>
                     </ul>
-                    <p><strong>タッチ操作:</strong></p>
-                    <ul>
-                        <li>移動: 左下のジョイスティック</li>
-                        <li>射撃: 右下の赤いボタン</li>
-                    </ul>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" id="resumeButton" style="display: none;">ゲームに戻る</button>
+                    <button type="button" class="btn btn-primary" id="resumeButton">ゲームに戻る</button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
                 </div>
             </div>
@@ -191,9 +164,7 @@
         const levelUpSound = document.getElementById('levelUpSound');
         const bossDeflectSound = document.getElementById('bossDeflectSound');
         const bossExplodeSound = document.getElementById('bossExplodeSound');
-        const joystick = document.getElementById('joystick');
-        const joystickKnob = document.getElementById('joystickKnob');
-        const shootButton = document.getElementById('shootButton');
+        const mobileMessage = document.getElementById('mobileMessage');
         const controlModal = new bootstrap.Modal(document.getElementById('controlModal'));
         const resumeButton = document.getElementById('resumeButton');
 
@@ -201,8 +172,8 @@
         shootSound.volume = 0.7;
         hitSound.volume = 0.7;
         levelUpSound.volume = 0.7;
-        bossDeflectSound.volume = 0.7;
-        bossExplodeSound.volume = 0.9;
+        bossDeflectSound.volume = 1.0;
+        bossExplodeSound.volume = 1.0;
 
         let playerImageLoaded = false;
         let enemyImagesLoaded = 0;
@@ -232,9 +203,17 @@
 
         function checkImagesLoaded() {
             if (playerImageLoaded && enemyImagesLoaded === MAX_ENEMIES && laserImageLoaded && bossImageLoaded) {
-                startScreen.style.display = 'block';
-                controlButton.style.display = 'block';
+                if (isMobileDevice()) {
+                    mobileMessage.style.display = 'block';
+                } else {
+                    startScreen.style.display = 'block';
+                    controlButton.style.display = 'block';
+                }
             }
+        }
+
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         }
 
         const player = {
@@ -294,7 +273,7 @@
             width: 150,
             height: 150,
             speed: 0.4,
-            health: 300,  // ラスボスのライフを300に変更
+            health: 300,
             maxHealth: 300,
             flashDuration: 100,
             fadeDuration: 200
@@ -320,49 +299,6 @@
             if (e.code === 'Space' && gameRunning && !gamePaused) shoot();
         });
         document.addEventListener('keyup', (e) => { if (e.code in keys) keys[e.code] = false; });
-
-        let joystickActive = false, joystickStartX = 0, joystickStartY = 0, joystickDeltaX = 0, joystickDeltaY = 0;
-        let shootActive = false;
-
-        joystick.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const touch = e.touches[0];
-            joystickActive = true;
-            joystickStartX = touch.clientX;
-            joystickStartY = touch.clientY;
-        });
-
-        joystick.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            if (!joystickActive) return;
-            const touch = e.touches[0];
-            joystickDeltaX = touch.clientX - joystickStartX;
-            joystickDeltaY = touch.clientY - joystickStartY;
-            const maxDistance = 50;
-            const distance = Math.sqrt(joystickDeltaX * joystickDeltaX + joystickDeltaY * joystickDeltaY);
-            if (distance > maxDistance) {
-                const angle = Math.atan2(joystickDeltaY, joystickDeltaX);
-                joystickDeltaX = Math.cos(angle) * maxDistance;
-                joystickDeltaY = Math.sin(angle) * maxDistance;
-            }
-            joystickKnob.style.left = `${50 + joystickDeltaX}px`;
-            joystickKnob.style.top = `${50 + joystickDeltaY}px`;
-        });
-
-        joystick.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            joystickActive = false;
-            joystickDeltaX = 0;
-            joystickDeltaY = 0;
-            joystickKnob.style.left = '50%';
-            joystickKnob.style.top = '50%';
-        });
-
-        shootButton.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            if (gameRunning && !gamePaused) { shootActive = true; shoot(); }
-        });
-        shootButton.addEventListener('touchend', (e) => { e.preventDefault(); shootActive = false; });
 
         function shoot() {
             const bulletLevel = Math.min(weaponLevel, MAX_WEAPON_LEVEL);
@@ -457,7 +393,7 @@
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance !== 0) {
                     const angle = Math.atan2(dy, dx);
-                    const adjustedBulletSpeed = enemyBulletBase.speed * enemy.speed; // 敵の射撃スピードを移動スピードに比例させる
+                    const adjustedBulletSpeed = enemyBulletBase.speed * enemy.speed;
                     const speedX = Math.cos(angle) * adjustedBulletSpeed;
                     const speedY = Math.sin(angle) * adjustedBulletSpeed;
                     enemyBullets.push({
@@ -556,8 +492,6 @@
                         backgroundMusic.pause();
                         clearScore.textContent = freeSpeechPoints;
                         gameClearScreen.style.display = 'block';
-                        joystick.style.display = 'none';
-                        shootButton.style.display = 'none';
                         pauseButton.style.display = 'none';
                         controlButton.style.display = 'block';
                         boss = null;
@@ -627,17 +561,6 @@
             if (keys.ArrowLeft || keys.KeyA) player.rotation -= player.rotationSpeed;
             if (keys.ArrowRight || keys.KeyD) player.rotation += player.rotationSpeed;
 
-            if (joystickActive) {
-                const magnitude = Math.sqrt(joystickDeltaX * joystickDeltaX + joystickDeltaY * joystickDeltaY);
-                if (magnitude > 10) {
-                    const joystickAngle = Math.atan2(joystickDeltaY, joystickDeltaX);
-                    const joystickSpeed = player.speed * 0.5;
-                    player.velocityX += Math.cos(joystickAngle) * joystickSpeed;
-                    player.velocityY += Math.sin(joystickAngle) * joystickSpeed;
-                    player.rotation = joystickAngle;
-                }
-            }
-
             player.x += player.velocityX;
             player.y += player.velocityY;
             player.velocityX *= friction;
@@ -679,13 +602,10 @@
             gameStartTime = Date.now();
             backgroundMusic.currentTime = 0;
             backgroundMusic.play();
-            joystick.style.display = 'block';
-            shootButton.style.display = 'block';
             requestAnimationFrame(gameLoop);
         }
 
         function showControls() {
-            resumeButton.style.display = 'none';
             controlModal.show();
         }
 
@@ -693,7 +613,6 @@
             if (gameRunning && !gamePaused) {
                 gamePaused = true;
                 backgroundMusic.pause();
-                resumeButton.style.display = 'block';
                 controlModal.show();
             }
         }
@@ -708,7 +627,7 @@
         }
 
         function gameLoop(timestamp) {
-            if (!gameRunning) return;
+            if (!gameRunning || gamePaused) return;
 
             if (isLifeZero) {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -785,8 +704,6 @@
                 backgroundMusic.pause();
                 finalScore.textContent = freeSpeechPoints;
                 gameOverScreen.style.display = 'block';
-                joystick.style.display = 'none';
-                shootButton.style.display = 'none';
                 pauseButton.style.display = 'none';
                 controlButton.style.display = 'block';
                 return;
@@ -1050,6 +967,7 @@
         }
 
         function startGame() {
+            if (isMobileDevice()) return;
             gameRunning = true;
             gamePaused = false;
             isLifeZero = false;
@@ -1058,8 +976,6 @@
             controlButton.style.display = 'none';
             pauseButton.style.display = 'block';
             backgroundMusic.play();
-            joystick.style.display = 'block';
-            shootButton.style.display = 'block';
             requestAnimationFrame(gameLoop);
         }
 
@@ -1070,6 +986,7 @@
         pauseButton.addEventListener('click', pauseGame);
         resumeButton.addEventListener('click', resumeGame);
 
+        // モーダルが閉じられたときの処理
         document.getElementById('controlModal').addEventListener('hidden.bs.modal', () => {
             if (gameRunning && gamePaused) {
                 resumeGame();
