@@ -166,7 +166,7 @@
         let enemyImagesLoaded = 0;
         let laserImageLoaded = false;
         let bossImageLoaded = false;
-        const MAX_ENEMIES = 13;
+        const MAX_ENEMIES = 15;
 
         const playerImage = new Image();
         const enemyImages = Array.from({ length: MAX_ENEMIES }, (_, i) => new Image());
@@ -207,6 +207,7 @@
         };
 
         const bullets = [];
+        const enemyBullets = [];
         const lasers = [];
         const enemies = [];
         const levelUpPoints = [];
@@ -222,21 +223,24 @@
 
         const friction = 0.95;
         const bulletBase = { width: 5, height: 10, speed: 7, color: 'white' };
+        const enemyBulletBase = { width: 30, height: 30, speed: 0.75, color: 'red' };
         const laserBase = { size: laserImage.width || 30, speed: 5, lineLength: 100 };
         const enemyConfigs = [
-            { speed: 0.5, points: 100, width: 60, height: 60 },
-            { speed: 0.6, points: 120, width: 60, height: 60 },
-            { speed: 0.4, points: 80, width: 60, height: 60 },
-            { speed: 0.7, points: 140, width: 68, height: 68 },
-            { speed: 0.3, points: 60, width: 53, height: 53 },
-            { speed: 0.8, points: 160, width: 75, height: 75 },
-            { speed: 0.5, points: 100, width: 60, height: 60 },
-            { speed: 0.6, points: 120, width: 60, height: 60 },
-            { speed: 0.4, points: 80, width: 60, height: 60 },
-            { speed: 0.9, points: 200, width: 83, height: 83 },
-            { speed: 1.0, points: 250, width: 45, height: 45 },
-            { speed: 0.2, points: 300, width: 90, height: 90 },
-            { speed: 0.55, points: 150, width: 70, height: 70 }
+            { speed: 0.5, points: 100, width: 72, height: 72 },
+            { speed: 0.6, points: 120, width: 72, height: 72 },
+            { speed: 0.4, points: 80, width: 72, height: 72 },
+            { speed: 0.7, points: 140, width: 82, height: 82 },
+            { speed: 0.3, points: 60, width: 64, height: 64 },
+            { speed: 0.8, points: 160, width: 90, height: 90 },
+            { speed: 0.5, points: 100, width: 72, height: 72 },
+            { speed: 0.6, points: 120, width: 72, height: 72 },
+            { speed: 0.4, points: 80, width: 72, height: 72 },
+            { speed: 0.9, points: 200, width: 100, height: 100 },
+            { speed: 1.0, points: 250, width: 54, height: 54 },
+            { speed: 0.2, points: 300, width: 108, height: 108 },
+            { speed: 0.55, points: 150, width: 84, height: 84 },
+            { speed: 0.65, points: 130, width: 76, height: 76 },
+            { speed: 0.45, points: 90, width: 68, height: 68 }
         ];
 
         const bossConfig = {
@@ -257,6 +261,7 @@
         const speedIncreaseRate = 0.1;
         const maxSpeedMultiplier = 4.0;
         const explosionDuration = 150;
+        const enemyShootInterval = 3000;
 
         const keys = {
             ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
@@ -393,8 +398,32 @@
                 speed: adjustedSpeed,
                 isExploding: false,
                 explosionStart: null,
-                scale: 1
+                scale: 1,
+                lastShot: Date.now()
             });
+        }
+
+        function enemyShoot(enemy) {
+            if (Date.now() - enemy.lastShot > enemyShootInterval) {
+                const dx = player.x + player.width / 2 - (enemy.x + enemy.width / 2);
+                const dy = player.y + player.height / 2 - (enemy.y + enemy.height / 2);
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance !== 0) {
+                    const angle = Math.atan2(dy, dx);
+                    const speedX = Math.cos(angle) * enemyBulletBase.speed;
+                    const speedY = Math.sin(angle) * enemyBulletBase.speed;
+                    enemyBullets.push({
+                        x: enemy.x + enemy.width / 2 - enemyBulletBase.width / 2,
+                        y: enemy.y + enemy.height / 2 - enemyBulletBase.height / 2,
+                        width: enemyBulletBase.width,
+                        height: enemyBulletBase.height,
+                        speedX: speedX,
+                        speedY: speedY,
+                        color: enemyBulletBase.color
+                    });
+                    enemy.lastShot = Date.now();
+                }
+            }
         }
 
         function spawnBoss() {
@@ -557,6 +586,7 @@
             player.velocityX = 0;
             player.velocityY = 0;
             bullets.length = 0;
+            enemyBullets.length = 0;
             lasers.length = 0;
             enemies.length = 0;
             levelUpPoints.length = 0;
@@ -595,6 +625,45 @@
 
                 if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
                     bullets.splice(bulletIndex, 1);
+                }
+            });
+
+            enemyBullets.forEach((bullet, bulletIndex) => {
+                bullet.x += bullet.speedX;
+                bullet.y += bullet.speedY;
+                ctx.save();
+                ctx.translate(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2);
+                ctx.fillStyle = bullet.color;
+                ctx.beginPath();
+                ctx.moveTo(0, -bullet.height / 2); // 上
+                ctx.lineTo(bullet.width / 2, 0);   // 右
+                ctx.lineTo(0, bullet.height / 2);  // 下
+                ctx.lineTo(-bullet.width / 2, 0);  // 左
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+
+                if (checkCollision(bullet, player)) {
+                    gameRunning = false;
+                    backgroundMusic.pause();
+                    finalScore.textContent = freeSpeechPoints;
+                    gameOverScreen.style.display = 'block';
+                    joystick.style.display = 'none';
+                    shootButton.style.display = 'none';
+                    return;
+                }
+
+                bullets.some((playerBullet, playerBulletIndex) => {
+                    if (checkCollision(bullet, playerBullet)) {
+                        enemyBullets.splice(bulletIndex, 1);
+                        bullets.splice(playerBulletIndex, 1);
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                    enemyBullets.splice(bulletIndex, 1);
                 }
             });
 
@@ -638,6 +707,7 @@
                 } else {
                     moveTowardsPlayer(enemy);
                     ctx.drawImage(enemyImages[enemy.type], enemy.x, enemy.y, config.width, config.height);
+                    enemyShoot(enemy);
 
                     bullets.forEach((bullet, bulletIndex) => {
                         if (checkCollision(bullet, enemy)) {
@@ -682,7 +752,6 @@
                         }
                     });
 
-                    // プレイヤー本体のみが敵に接触した場合にゲームオーバー
                     if (checkCollision(player, enemy)) {
                         gameRunning = false;
                         backgroundMusic.pause();
@@ -739,7 +808,6 @@
                         }
                     });
 
-                    // プレイヤー本体のみがボスに接触した場合にゲームオーバー
                     if (checkCollision(player, boss)) {
                         gameRunning = false;
                         backgroundMusic.pause();
