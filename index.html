@@ -184,18 +184,25 @@
         let enemyImagesLoaded = 0;
         let laserImageLoaded = false;
         let bossImageLoaded = false;
-        const MAX_ENEMIES = 16;
+        let stealthImageLoaded = false; // ステルス機関連
+        const MAX_ENEMIES = 17;
 
         const playerImage = new Image();
         const enemyImages = Array.from({ length: MAX_ENEMIES }, (_, i) => new Image());
         const laserImage = new Image();
         const bossImage = new Image();
+        const stealthImage = new Image(); // ステルス機関連
 
         playerImage.src = 'player.png';
         laserImage.src = 'laser.png';
         bossImage.src = 'boss.png';
+        stealthImage.src = 'stealth.png'; // ステルス機関連（画像ファイルが必要）
         enemyImages.forEach((img, i) => {
-            img.src = `enemy${i + 1}.png`;
+            if (i === MAX_ENEMIES - 1) {
+                img.src = 'stealth.png';
+            } else {
+                img.src = `enemy${i + 1}.png`;
+            }
             img.onload = () => {
                 enemyImagesLoaded++;
                 checkImagesLoaded();
@@ -205,9 +212,10 @@
         playerImage.onload = () => { playerImageLoaded = true; checkImagesLoaded(); };
         laserImage.onload = () => { laserImageLoaded = true; checkImagesLoaded(); };
         bossImage.onload = () => { bossImageLoaded = true; checkImagesLoaded(); };
+        stealthImage.onload = () => { stealthImageLoaded = true; checkImagesLoaded(); }; // ステルス機関連
 
         function checkImagesLoaded() {
-            if (playerImageLoaded && enemyImagesLoaded === MAX_ENEMIES && laserImageLoaded && bossImageLoaded) {
+            if (playerImageLoaded && enemyImagesLoaded === MAX_ENEMIES && laserImageLoaded && bossImageLoaded && stealthImageLoaded) {
                 if (isMobileDevice()) {
                     mobileMessage.style.display = 'block';
                 } else {
@@ -240,6 +248,7 @@
         const lasers = [];
         const enemies = [];
         const levelUpPoints = [];
+        const lifeUpPoints = []; // ライフ回復ポイント関連
         let boss = null;
         let bossSpawned = false;
         let freeSpeechPoints = 0;
@@ -247,7 +256,7 @@
         const MAX_WEAPON_LEVEL = 8;
         let enemiesKilled = 0;
         let enemiesKilledAfterLevel8 = 0;
-        let totalEnemiesKilledForLevel = 0; // レベルアップ用の累計撃破数トラッカー
+        let totalEnemiesKilledForLevel = 0;
         let gameRunning = false;
         let gamePaused = false;
         let gameStartTime = 0;
@@ -273,7 +282,9 @@
             { speed: 0.55, points: 150, width: 84, height: 84 },
             { speed: 0.65, points: 130, width: 76, height: 76 },
             { speed: 0.45, points: 90, width: 68, height: 68 },
-            { speed: 0.35, points: 110, width: 70, height: 70 }
+            { speed: 0.35, points: 110, width: 70, height: 70 },
+            // ステルス機関連: ステルス機の設定
+            { speed: 1.2, points: 400, width: 80, height: 80, stealth: true, invisibleTime: 2000, visibleTime: 1000, fadeDuration: 500 }
         ];
 
         const bossConfig = {
@@ -390,7 +401,15 @@
                 isExploding: false,
                 explosionStart: null,
                 scale: 1,
-                lastShot: Date.now()
+                lastShot: Date.now(),
+                // ステルス機関連
+                isStealth: config.stealth || false,
+                invisible: config.stealth ? true : false,
+                opacity: config.stealth ? 0 : 1,
+                lastStealthToggle: Date.now(),
+                invisibleTime: config.invisibleTime || 0,
+                visibleTime: config.visibleTime || 0,
+                fadeDuration: config.fadeDuration || 0
             });
         }
 
@@ -439,6 +458,18 @@
 
         function spawnLevelUpPoint(x, y) {
             levelUpPoints.push({
+                x: x,
+                y: y,
+                width: 20,
+                height: 20,
+                lifespan: 10000,
+                spawnTime: Date.now()
+            });
+        }
+
+        // ライフ回復ポイント関連
+        function spawnLifeUpPoint(x, y) {
+            lifeUpPoints.push({
                 x: x,
                 y: y,
                 width: 20,
@@ -596,13 +627,14 @@
             lasers.length = 0;
             enemies.length = 0;
             levelUpPoints.length = 0;
+            lifeUpPoints.length = 0; // ライフ回復ポイント関連
             boss = null;
             bossSpawned = false;
             freeSpeechPoints = 0;
             weaponLevel = 1;
             enemiesKilled = 0;
             enemiesKilledAfterLevel8 = 0;
-            totalEnemiesKilledForLevel = 0; // リセット時にトラッカーも初期化
+            totalEnemiesKilledForLevel = 0;
             gameRunning = true;
             gamePaused = false;
             isLifeZero = false;
@@ -693,12 +725,21 @@
                             ctx.restore();
                         }
                     } else {
+                        ctx.save();
+                        ctx.globalAlpha = enemy.opacity; // ステルス機関連: 透明度を適用
                         ctx.drawImage(enemyImages[enemy.type], enemy.x, enemy.y, config.width, config.height);
+                        ctx.restore();
                     }
                 });
                 if (boss) drawBoss();
                 levelUpPoints.forEach(point => {
                     ctx.fillStyle = 'yellow';
+                    ctx.beginPath();
+                    ctx.arc(point.x + point.width / 2, point.y + point.height / 2, point.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                lifeUpPoints.forEach(point => { // ライフ回復ポイント関連
+                    ctx.fillStyle = 'green';
                     ctx.beginPath();
                     ctx.arc(point.x + point.width / 2, point.y + point.height / 2, point.width / 2, 0, Math.PI * 2);
                     ctx.fill();
@@ -817,26 +858,53 @@
                     }
                 } else {
                     moveTowardsPlayer(enemy);
+
+                    // ステルス機関連: フェイドイン・フェイドアウトの処理
+                    if (enemy.isStealth) {
+                        const elapsed = Date.now() - enemy.lastStealthToggle;
+                        if (enemy.invisible && elapsed > enemy.invisibleTime) {
+                            enemy.invisible = false;
+                            enemy.lastStealthToggle = Date.now();
+                        } else if (!enemy.invisible && elapsed > enemy.visibleTime) {
+                            enemy.invisible = true;
+                            enemy.lastStealthToggle = Date.now();
+                        }
+
+                        const fadeProgress = Math.min(elapsed / enemy.fadeDuration, 1);
+                        if (enemy.invisible) {
+                            enemy.opacity = 1 - fadeProgress; // フェイドアウト
+                        } else {
+                            enemy.opacity = fadeProgress; // フェイドイン
+                        }
+                    }
+
+                    ctx.save();
+                    ctx.globalAlpha = enemy.opacity; // ステルス機関連: 透明度を適用
                     ctx.drawImage(enemyImages[enemy.type], enemy.x, enemy.y, config.width, config.height);
+                    ctx.restore();
+
                     enemyShoot(enemy);
 
                     bullets.forEach((bullet, bulletIndex) => {
-                        if (checkCollision(bullet, enemy)) {
+                        if (checkCollision(bullet, enemy) && enemy.opacity > 0.5) { // ステルス機関連: 透明度50%以上で当たり判定
                             enemy.isExploding = true;
                             enemy.explosionStart = Date.now();
                             bullets.splice(bulletIndex, 1);
                             freeSpeechPoints += config.points * weaponLevel;
                             enemiesKilled++;
-                            totalEnemiesKilledForLevel++; // レベルアップ用カウンタを増加
+                            totalEnemiesKilledForLevel++;
                             if (weaponLevel >= 8) {
                                 enemiesKilledAfterLevel8++;
                             }
-                            const baseEnemiesRequired = 5; // 基準値
-                            const increasePerLevel = 3;   // レベルごとに3増
+                            const baseEnemiesRequired = 5;
+                            const increasePerLevel = 3;
                             const enemiesRequiredForNextLevel = baseEnemiesRequired + (weaponLevel - 1) * increasePerLevel;
                             if (totalEnemiesKilledForLevel >= enemiesRequiredForNextLevel && weaponLevel < MAX_WEAPON_LEVEL) {
                                 spawnLevelUpPoint(enemy.x, enemy.y);
-                                totalEnemiesKilledForLevel = 0; // 必要数に達したらリセット
+                                totalEnemiesKilledForLevel = 0;
+                            }
+                            if (enemy.isStealth) { // ライフ回復ポイント関連: ステルス機破壊時に生成
+                                spawnLifeUpPoint(enemy.x, enemy.y);
                             }
                             hitSound.currentTime = 0;
                             hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
@@ -848,21 +916,24 @@
                     });
 
                     lasers.forEach((laser, laserIndex) => {
-                        if (checkCollision(laser, enemy)) {
+                        if (checkCollision(laser, enemy) && enemy.opacity > 0.5) { // ステルス機関連: 透明度50%以上で当たり判定
                             enemy.isExploding = true;
                             enemy.explosionStart = Date.now();
                             freeSpeechPoints += config.points * weaponLevel;
                             enemiesKilled++;
-                            totalEnemiesKilledForLevel++; // レベルアップ用カウンタを増加
+                            totalEnemiesKilledForLevel++;
                             if (weaponLevel >= 8) {
                                 enemiesKilledAfterLevel8++;
                             }
-                            const baseEnemiesRequired = 5; // 基準値
-                            const increasePerLevel = 3;   // レベルごとに3増
+                            const baseEnemiesRequired = 5;
+                            const increasePerLevel = 3;
                             const enemiesRequiredForNextLevel = baseEnemiesRequired + (weaponLevel - 1) * increasePerLevel;
                             if (totalEnemiesKilledForLevel >= enemiesRequiredForNextLevel && weaponLevel < MAX_WEAPON_LEVEL) {
                                 spawnLevelUpPoint(enemy.x, enemy.y);
-                                totalEnemiesKilledForLevel = 0; // 必要数に達したらリセット
+                                totalEnemiesKilledForLevel = 0;
+                            }
+                            if (enemy.isStealth) { // ライフ回復ポイント関連: ステルス機破壊時に生成
+                                spawnLifeUpPoint(enemy.x, enemy.y);
                             }
                             hitSound.currentTime = 0;
                             hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
@@ -873,7 +944,7 @@
                         }
                     });
 
-                    if (checkCollision(player, enemy)) {
+                    if (checkCollision(player, enemy) && enemy.opacity > 0.5) { // ステルス機関連: 透明度50%以上で当たり判定
                         player.life--;
                         enemies.splice(enemyIndex, 1);
                         hitSound.currentTime = 0;
@@ -953,11 +1024,31 @@
                 if (checkCollision(player, point)) {
                     if (weaponLevel < MAX_WEAPON_LEVEL) {
                         weaponLevel++;
-                        totalEnemiesKilledForLevel = 0; // レベルアップ時にリセット
+                        totalEnemiesKilledForLevel = 0;
                         levelUpSound.currentTime = 0;
                         levelUpSound.play().catch(error => console.error("Level up sound playback failed:", error));
                     }
                     levelUpPoints.splice(pointIndex, 1);
+                }
+            });
+
+            // ライフ回復ポイント関連
+            lifeUpPoints.forEach((point, pointIndex) => {
+                if (Date.now() - point.spawnTime > point.lifespan) {
+                    lifeUpPoints.splice(pointIndex, 1);
+                    return;
+                }
+                ctx.fillStyle = 'green';
+                ctx.beginPath();
+                ctx.arc(point.x + point.width / 2, point.y + point.height / 2, point.width / 2, 0, Math.PI * 2);
+                ctx.fill();
+                if (checkCollision(player, point)) {
+                    if (player.life < player.maxLife) {
+                        player.life++;
+                        levelUpSound.currentTime = 0; // ライフ回復時も効果音を再生
+                        levelUpSound.play().catch(error => console.error("Level up sound playback failed:", error));
+                    }
+                    lifeUpPoints.splice(pointIndex, 1);
                 }
             });
 
@@ -1020,7 +1111,7 @@
             }
         });
 
-        [playerImage, ...enemyImages, laserImage, bossImage].forEach(img => {
+        [playerImage, ...enemyImages, laserImage, bossImage, stealthImage].forEach(img => {
             img.onerror = () => {
                 console.error(`Failed to load image: ${img.src}`);
                 alert(`画像の読み込みに失敗しました: ${img.src}`);
