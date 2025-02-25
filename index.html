@@ -98,7 +98,7 @@
         <button id="startButton">ゲーム開始</button>
     </div>
     <div id="mobileMessage">
-        <p>モバイル端末では動作しません。<br>キーボード付きPCのWEBブラウザでお楽しみください。</p>
+        <p>このゲームは<br>モバイル端末では動作しません。<br>キーボード付きPCのWEBブラウザでお楽しみください。</p>
     </div>
     <button id="controlButton" class="btn btn-primary" style="display: none;">操作方法</button>
     <button id="pauseButton" class="btn btn-primary" style="display: none;">操作方法・一時停止</button>
@@ -247,6 +247,7 @@
         const MAX_WEAPON_LEVEL = 8;
         let enemiesKilled = 0;
         let enemiesKilledAfterLevel8 = 0;
+        let totalEnemiesKilledForLevel = 0; // レベルアップ用の累計撃破数トラッカー
         let gameRunning = false;
         let gamePaused = false;
         let gameStartTime = 0;
@@ -276,18 +277,19 @@
         ];
 
         const bossConfig = {
-            width: 150,
-            height: 150,
+            width: 200,
+            height: 200,
             speed: 0.4,
             health: 300,
             maxHealth: 300,
             flashDuration: 100,
-            fadeDuration: 200
+            fadeDuration: 200,
+            oscillationAmplitude: 20
         };
 
-        let spawnInterval = 2000;
+        let spawnInterval = 1500;
         const minSpawnInterval = 200;
-        const spawnDecreaseRate = 50;
+        const spawnDecreaseRate = 75;
         let lastEnemySpawn = Date.now();
         let lastSpawnUpdate = Date.now();
         const speedIncreaseRate = 0.1;
@@ -519,17 +521,22 @@
                     }
                     ctx.globalAlpha = boss.opacity;
 
+                    const oscillationX = Math.sin(Date.now() * 0.002) * bossConfig.oscillationAmplitude;
+                    const oscillationY = Math.cos(Date.now() * 0.002) * bossConfig.oscillationAmplitude;
+                    const drawX = boss.x + oscillationX;
+                    const drawY = boss.y + oscillationY;
+
                     if (boss.flash && Date.now() - boss.flashStart < bossConfig.flashDuration) {
                         ctx.filter = 'brightness(2)';
                     }
-                    ctx.drawImage(bossImage, boss.x, boss.y, boss.width, boss.height);
+                    ctx.drawImage(bossImage, drawX, drawY, boss.width, boss.height);
                     const healthBarWidth = boss.width;
                     const healthBarHeight = 10;
                     const healthRatio = boss.health / bossConfig.maxHealth;
                     ctx.fillStyle = 'red';
-                    ctx.fillRect(boss.x, boss.y - 20, healthBarWidth, healthBarHeight);
+                    ctx.fillRect(drawX, drawY - 20, healthBarWidth, healthBarHeight);
                     ctx.fillStyle = 'green';
-                    ctx.fillRect(boss.x, boss.y - 20, healthBarWidth * healthRatio, healthBarHeight);
+                    ctx.fillRect(drawX, drawY - 20, healthBarWidth * healthRatio, healthBarHeight);
                 }
                 ctx.restore();
             }
@@ -595,6 +602,7 @@
             weaponLevel = 1;
             enemiesKilled = 0;
             enemiesKilledAfterLevel8 = 0;
+            totalEnemiesKilledForLevel = 0; // リセット時にトラッカーも初期化
             gameRunning = true;
             gamePaused = false;
             isLifeZero = false;
@@ -603,7 +611,7 @@
             controlButton.style.display = 'none';
             pauseButton.style.display = 'block';
             lastEnemySpawn = Date.now();
-            spawnInterval = 2000;
+            spawnInterval = 1500;
             lastSpawnUpdate = Date.now();
             gameStartTime = Date.now();
             backgroundMusic.currentTime = 0;
@@ -819,11 +827,16 @@
                             bullets.splice(bulletIndex, 1);
                             freeSpeechPoints += config.points * weaponLevel;
                             enemiesKilled++;
+                            totalEnemiesKilledForLevel++; // レベルアップ用カウンタを増加
                             if (weaponLevel >= 8) {
                                 enemiesKilledAfterLevel8++;
                             }
-                            if (enemiesKilled % 5 === 0 && weaponLevel < MAX_WEAPON_LEVEL) {
+                            const baseEnemiesRequired = 5; // 基準値
+                            const increasePerLevel = 3;   // レベルごとに3増
+                            const enemiesRequiredForNextLevel = baseEnemiesRequired + (weaponLevel - 1) * increasePerLevel;
+                            if (totalEnemiesKilledForLevel >= enemiesRequiredForNextLevel && weaponLevel < MAX_WEAPON_LEVEL) {
                                 spawnLevelUpPoint(enemy.x, enemy.y);
+                                totalEnemiesKilledForLevel = 0; // 必要数に達したらリセット
                             }
                             hitSound.currentTime = 0;
                             hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
@@ -840,11 +853,16 @@
                             enemy.explosionStart = Date.now();
                             freeSpeechPoints += config.points * weaponLevel;
                             enemiesKilled++;
+                            totalEnemiesKilledForLevel++; // レベルアップ用カウンタを増加
                             if (weaponLevel >= 8) {
                                 enemiesKilledAfterLevel8++;
                             }
-                            if (enemiesKilled % 5 === 0 && weaponLevel < MAX_WEAPON_LEVEL) {
+                            const baseEnemiesRequired = 5; // 基準値
+                            const increasePerLevel = 3;   // レベルごとに3増
+                            const enemiesRequiredForNextLevel = baseEnemiesRequired + (weaponLevel - 1) * increasePerLevel;
+                            if (totalEnemiesKilledForLevel >= enemiesRequiredForNextLevel && weaponLevel < MAX_WEAPON_LEVEL) {
                                 spawnLevelUpPoint(enemy.x, enemy.y);
+                                totalEnemiesKilledForLevel = 0; // 必要数に達したらリセット
                             }
                             hitSound.currentTime = 0;
                             hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
@@ -935,6 +953,7 @@
                 if (checkCollision(player, point)) {
                     if (weaponLevel < MAX_WEAPON_LEVEL) {
                         weaponLevel++;
+                        totalEnemiesKilledForLevel = 0; // レベルアップ時にリセット
                         levelUpSound.currentTime = 0;
                         levelUpSound.play().catch(error => console.error("Level up sound playback failed:", error));
                     }
@@ -963,8 +982,12 @@
             ctx.fillText(`Enemies Killed After Lv8: ${enemiesKilledAfterLevel8}`, 10, 80);
             ctx.fillText(`Spawn Interval: ${Math.round(spawnInterval)}ms`, 10, 100);
             ctx.fillText(`Speed Multiplier: ${speedMultiplier.toFixed(2)}x`, 10, 120);
+            const baseEnemiesRequired = 5;
+            const increasePerLevel = 3;
+            const enemiesRequiredForNextLevel = baseEnemiesRequired + (weaponLevel - 1) * increasePerLevel;
+            ctx.fillText(`Next Level Req: ${totalEnemiesKilledForLevel}/${enemiesRequiredForNextLevel}`, 10, 140);
             if (boss) {
-                ctx.fillText(`Boss Health: ${boss.health}/${bossConfig.maxHealth}`, 10, 140);
+                ctx.fillText(`Boss Health: ${boss.health}/${bossConfig.maxHealth}`, 10, 160);
             }
 
             if (gameRunning) {
@@ -991,7 +1014,6 @@
         controlButton.addEventListener('click', showControls);
         pauseButton.addEventListener('click', pauseGame);
 
-        // モーダルが閉じられたときの処理
         document.getElementById('controlModal').addEventListener('hidden.bs.modal', () => {
             if (gameRunning && gamePaused) {
                 resumeGame();
