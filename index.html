@@ -196,7 +196,6 @@
         const finalScore = document.getElementById('finalScore');
         const clearScore = document.getElementById('clearScore');
         const startScreen = document.getElementById('startScreen');
-        const startButton = document.getElementById('startButton');
         const countdownScreen = document.getElementById('countdownScreen');
         const controlButton = document.getElementById('controlButton');
         const pauseButton = document.getElementById('pauseButton');
@@ -271,14 +270,15 @@
             rotationSpeed: Math.PI / 36,
             velocityX: 0,
             velocityY: 0,
-            life: 5,
-            maxLife: 5
+            life: 10,
+            maxLife: 10
         };
 
         const bullets = [];
         const enemyBullets = [];
         const lasers = [];
         const enemies = [];
+        const explodingEnemies = []; // 連鎖爆発中の敵を管理
         const levelUpPoints = [];
         const lifeUpPoints = [];
         let boss = null;
@@ -557,15 +557,7 @@
                 if (boss.isExploding) {
                     const elapsed = Date.now() - boss.explosionStart;
                     const progress = elapsed / explosionDuration;
-                    if (progress >= 1) {
-                        gameRunning = false;
-                        backgroundMusic.pause();
-                        clearScore.textContent = freeSpeechPoints;
-                        gameClearScreen.style.display = 'block';
-                        pauseButton.style.display = 'none';
-                        controlButton.style.display = 'block';
-                        boss = null;
-                    } else {
+                    if (progress < 1) {
                         boss.scale = 1 + progress;
                         const alpha = 1 - progress;
                         ctx.globalAlpha = alpha;
@@ -623,6 +615,27 @@
             ctx.fillText(`Life: ${player.life}/${player.maxLife}`, gaugeX + 5, gaugeY - 5);
         }
 
+        function drawExplodingEnemies() {
+            explodingEnemies.forEach((enemy, index) => {
+                const config = enemyConfigs[enemy.type];
+                const elapsed = Date.now() - enemy.explosionStart;
+                const progress = elapsed / explosionDuration;
+                if (progress < 1) {
+                    enemy.scale = 1 + progress;
+                    const alpha = 1 - progress;
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
+                    ctx.scale(enemy.scale, enemy.scale);
+                    const image = enemy.isStealth ? stealthImage : enemyImages[enemy.type];
+                    ctx.drawImage(image, -enemy.width / 2, -enemy.height / 2, config.width, config.height);
+                    ctx.restore();
+                } else {
+                    explodingEnemies.splice(index, 1); // アニメーション終了後に削除
+                }
+            });
+        }
+
         function movePlayer() {
             const angle = player.rotation;
             if (keys.ArrowUp || keys.KeyW) {
@@ -652,11 +665,12 @@
             player.rotation = 0;
             player.velocityX = 0;
             player.velocityY = 0;
-            player.life = player.maxLife;
+            player.life = 10;
             bullets.length = 0;
             enemyBullets.length = 0;
             lasers.length = 0;
             enemies.length = 0;
+            explodingEnemies.length = 0;
             levelUpPoints.length = 0;
             lifeUpPoints.length = 0;
             boss = null;
@@ -701,6 +715,45 @@
                 controlModal.hide();
                 requestAnimationFrame(gameLoop);
             }
+        }
+
+        function triggerEnemyChainExplosion() {
+            const remainingEnemies = [...enemies]; // 現在の敵機をコピー
+            let index = 0;
+
+            const explosionInterval = setInterval(() => {
+                if (index === 0 && boss && boss.isExploding) {
+                    // ボスの爆発が終わるのを待つ
+                    const elapsed = Date.now() - boss.explosionStart;
+                    if (elapsed >= explosionDuration) {
+                        boss = null; // ボスの爆発が終了したらnullに設定
+                        index++;
+                    }
+                } else if (index < remainingEnemies.length + 1) {
+                    if (index > 0) {
+                        const enemy = remainingEnemies[index - 1];
+                        enemy.isExploding = true;
+                        enemy.explosionStart = Date.now();
+                        explodingEnemies.push(enemy); // 爆発中の敵を専用配列に追加
+                        hitSound.currentTime = 0;
+                        hitSound.play().catch(error => console.error("Hit sound playback failed:", error));
+                    }
+                    index++;
+                } else {
+                    clearInterval(explosionInterval);
+                    enemies.length = 0; // 通常の敵機リストをクリア
+                    // 最後の敵の爆発アニメーションが終わるのを待つ
+                    setTimeout(() => {
+                        gameRunning = false;
+                        backgroundMusic.pause();
+                        clearScore.textContent = freeSpeechPoints;
+                        gameClearScreen.style.display = 'block';
+                        pauseButton.style.display = 'none';
+                        controlButton.style.display = 'block';
+                        explodingEnemies.length = 0; // 爆発中の敵をクリア
+                    }, explosionDuration + 100);
+                }
+            }, 200); // 0.2秒間隔で爆発
         }
 
         function gameLoop(timestamp) {
@@ -764,6 +817,7 @@
                         ctx.restore();
                     }
                 });
+                drawExplodingEnemies(); // 爆発中の敵を描画
                 if (boss) drawBoss();
                 levelUpPoints.forEach(point => {
                     ctx.fillStyle = 'yellow';
@@ -990,6 +1044,8 @@
                 }
             });
 
+            drawExplodingEnemies(); // 連鎖爆発中の敵を描画
+
             if (boss) {
                 if (!boss.isExploding) {
                     moveTowardsPlayer(boss);
@@ -1012,6 +1068,7 @@
                                 boss.explosionStart = Date.now();
                                 bossExplodeSound.currentTime = 0;
                                 bossExplodeSound.play().catch(error => console.error("Boss explode sound playback failed:", error));
+                                triggerEnemyChainExplosion(); // ボス破壊時に敵機の連鎖爆発を開始
                             }
                         }
                     });
@@ -1031,6 +1088,7 @@
                                 boss.explosionStart = Date.now();
                                 bossExplodeSound.currentTime = 0;
                                 bossExplodeSound.play().catch(error => console.error("Boss explode sound playback failed:", error));
+                                triggerEnemyChainExplosion(); // ボス破壊時に敵機の連鎖爆発を開始
                             }
                         }
                     });
