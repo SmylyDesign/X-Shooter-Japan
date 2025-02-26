@@ -78,6 +78,36 @@
             text-align: center;
             display: none;
         }
+        /* 広告用のスタイル */
+        .ad-image {
+            width: 400px;
+            height: 300px;
+            margin: 20px auto;
+            display: block;
+        }
+        /* モーダル内の広告用調整 */
+        .modal-body {
+            text-align: center;
+        }
+        /* スタート画面、リセット画面の調整 */
+        #startScreen, #gameOverScreen, #gameClearScreen {
+            width: 450px;
+        }
+        /* カウントダウン用のスタイル */
+        #countdownScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+            font-size: 48px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -85,18 +115,22 @@
     <div id="gameOverScreen">
         <h1>GAME OVER</h1>
         <p>Free Speech Points: <span id="finalScore">0</span></p>
+        <img src="pop.png" alt="広告" class="ad-image">
         <button id="resetButton">リセット</button>
     </div>
     <div id="gameClearScreen">
         <h1>GAME CLEAR</h1>
         <p>Free Speech Points: <span id="clearScore">0</span></p>
+        <img src="pop.png" alt="広告" class="ad-image">
         <button id="resetButtonClear">リセット</button>
     </div>
     <div id="startScreen">
         <h1>𝕏 Shooter Japan</h1>
         <p>日本のDSディープステートをぶっ飛ばすシューティングゲームですｗ</p>
+        <img src="pop.png" alt="広告" class="ad-image">
         <button id="startButton">ゲーム開始</button>
     </div>
+    <div id="countdownScreen">3</div>
     <div id="mobileMessage">
         <p>このゲームは<br>モバイル端末では動作しません。<br>キーボード付きPCのWEBブラウザでお楽しみください。</p>
     </div>
@@ -117,6 +151,7 @@
                         <li>移動: 矢印キー または W/A/S/D</li>
                         <li>射撃: スペースキー</li>
                     </ul>
+                    <img src="pop.png" alt="広告" class="ad-image">
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
@@ -162,6 +197,7 @@
         const clearScore = document.getElementById('clearScore');
         const startScreen = document.getElementById('startScreen');
         const startButton = document.getElementById('startButton');
+        const countdownScreen = document.getElementById('countdownScreen');
         const controlButton = document.getElementById('controlButton');
         const pauseButton = document.getElementById('pauseButton');
         const backgroundMusic = document.getElementById('backgroundMusic');
@@ -184,25 +220,21 @@
         let enemyImagesLoaded = 0;
         let laserImageLoaded = false;
         let bossImageLoaded = false;
-        let stealthImageLoaded = false; // ステルス機関連
-        const MAX_ENEMIES = 17;
+        let stealthImageLoaded = false;
+        const MAX_ENEMIES = 19;
 
         const playerImage = new Image();
         const enemyImages = Array.from({ length: MAX_ENEMIES }, (_, i) => new Image());
         const laserImage = new Image();
         const bossImage = new Image();
-        const stealthImage = new Image(); // ステルス機関連
+        const stealthImage = new Image();
 
         playerImage.src = 'player.png';
         laserImage.src = 'laser.png';
         bossImage.src = 'boss.png';
-        stealthImage.src = 'stealth.png'; // ステルス機関連（画像ファイルが必要）
+        stealthImage.src = 'stealth.png';
         enemyImages.forEach((img, i) => {
-            if (i === MAX_ENEMIES - 1) {
-                img.src = 'stealth.png';
-            } else {
-                img.src = `enemy${i + 1}.png`;
-            }
+            img.src = `enemy${i + 1}.png`;
             img.onload = () => {
                 enemyImagesLoaded++;
                 checkImagesLoaded();
@@ -212,7 +244,7 @@
         playerImage.onload = () => { playerImageLoaded = true; checkImagesLoaded(); };
         laserImage.onload = () => { laserImageLoaded = true; checkImagesLoaded(); };
         bossImage.onload = () => { bossImageLoaded = true; checkImagesLoaded(); };
-        stealthImage.onload = () => { stealthImageLoaded = true; checkImagesLoaded(); }; // ステルス機関連
+        stealthImage.onload = () => { stealthImageLoaded = true; checkImagesLoaded(); };
 
         function checkImagesLoaded() {
             if (playerImageLoaded && enemyImagesLoaded === MAX_ENEMIES && laserImageLoaded && bossImageLoaded && stealthImageLoaded) {
@@ -248,7 +280,7 @@
         const lasers = [];
         const enemies = [];
         const levelUpPoints = [];
-        const lifeUpPoints = []; // ライフ回復ポイント関連
+        const lifeUpPoints = [];
         let boss = null;
         let bossSpawned = false;
         let freeSpeechPoints = 0;
@@ -283,8 +315,9 @@
             { speed: 0.65, points: 130, width: 76, height: 76 },
             { speed: 0.45, points: 90, width: 68, height: 68 },
             { speed: 0.35, points: 110, width: 70, height: 70 },
-            // ステルス機関連: ステルス機の設定
-            { speed: 1.2, points: 400, width: 80, height: 80, stealth: true, invisibleTime: 2000, visibleTime: 1000, fadeDuration: 500 }
+            { speed: 1.2, points: 400, width: 80, height: 80, stealth: true, invisibleTime: 2000, visibleTime: 1000, fadeDuration: 500 },
+            { speed: 0.75, points: 180, width: 88, height: 88 },
+            { speed: 0.85, points: 220, width: 92, height: 92 }
         ];
 
         const bossConfig = {
@@ -377,7 +410,7 @@
         }
 
         function spawnEnemy() {
-            const type = Math.floor(Math.random() * MAX_ENEMIES);
+            const type = Math.floor(Math.random() * enemyConfigs.length);
             const config = enemyConfigs[type];
             const elapsedTime = (Date.now() - gameStartTime) / 1000;
             const speedMultiplier = Math.min(1 + (elapsedTime / 10) * speedIncreaseRate, maxSpeedMultiplier);
@@ -402,7 +435,6 @@
                 explosionStart: null,
                 scale: 1,
                 lastShot: Date.now(),
-                // ステルス機関連
                 isStealth: config.stealth || false,
                 invisible: config.stealth ? true : false,
                 opacity: config.stealth ? 0 : 1,
@@ -467,7 +499,6 @@
             });
         }
 
-        // ライフ回復ポイント関連
         function spawnLifeUpPoint(x, y) {
             lifeUpPoints.push({
                 x: x,
@@ -627,7 +658,7 @@
             lasers.length = 0;
             enemies.length = 0;
             levelUpPoints.length = 0;
-            lifeUpPoints.length = 0; // ライフ回復ポイント関連
+            lifeUpPoints.length = 0;
             boss = null;
             bossSpawned = false;
             freeSpeechPoints = 0;
@@ -721,13 +752,15 @@
                             ctx.globalAlpha = alpha;
                             ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
                             ctx.scale(enemy.scale, enemy.scale);
-                            ctx.drawImage(enemyImages[enemy.type], -enemy.width / 2, -enemy.height / 2, config.width, config.height);
+                            const image = enemy.isStealth ? stealthImage : enemyImages[enemy.type];
+                            ctx.drawImage(image, -enemy.width / 2, -enemy.height / 2, config.width, config.height);
                             ctx.restore();
                         }
                     } else {
                         ctx.save();
-                        ctx.globalAlpha = enemy.opacity; // ステルス機関連: 透明度を適用
-                        ctx.drawImage(enemyImages[enemy.type], enemy.x, enemy.y, config.width, config.height);
+                        ctx.globalAlpha = enemy.opacity;
+                        const image = enemy.isStealth ? stealthImage : enemyImages[enemy.type];
+                        ctx.drawImage(image, enemy.x, enemy.y, config.width, config.height);
                         ctx.restore();
                     }
                 });
@@ -738,7 +771,7 @@
                     ctx.arc(point.x + point.width / 2, point.y + point.height / 2, point.width / 2, 0, Math.PI * 2);
                     ctx.fill();
                 });
-                lifeUpPoints.forEach(point => { // ライフ回復ポイント関連
+                lifeUpPoints.forEach(point => {
                     ctx.fillStyle = 'green';
                     ctx.beginPath();
                     ctx.arc(point.x + point.width / 2, point.y + point.height / 2, point.width / 2, 0, Math.PI * 2);
@@ -853,13 +886,13 @@
                         ctx.globalAlpha = alpha;
                         ctx.translate(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
                         ctx.scale(enemy.scale, enemy.scale);
-                        ctx.drawImage(enemyImages[enemy.type], -enemy.width / 2, -enemy.height / 2, config.width, config.height);
+                        const image = enemy.isStealth ? stealthImage : enemyImages[enemy.type];
+                        ctx.drawImage(image, -enemy.width / 2, -enemy.height / 2, config.width, config.height);
                         ctx.restore();
                     }
                 } else {
                     moveTowardsPlayer(enemy);
 
-                    // ステルス機関連: フェイドイン・フェイドアウトの処理
                     if (enemy.isStealth) {
                         const elapsed = Date.now() - enemy.lastStealthToggle;
                         if (enemy.invisible && elapsed > enemy.invisibleTime) {
@@ -872,21 +905,22 @@
 
                         const fadeProgress = Math.min(elapsed / enemy.fadeDuration, 1);
                         if (enemy.invisible) {
-                            enemy.opacity = 1 - fadeProgress; // フェイドアウト
+                            enemy.opacity = 1 - fadeProgress;
                         } else {
-                            enemy.opacity = fadeProgress; // フェイドイン
+                            enemy.opacity = fadeProgress;
                         }
                     }
 
                     ctx.save();
-                    ctx.globalAlpha = enemy.opacity; // ステルス機関連: 透明度を適用
-                    ctx.drawImage(enemyImages[enemy.type], enemy.x, enemy.y, config.width, config.height);
+                    ctx.globalAlpha = enemy.opacity;
+                    const image = enemy.isStealth ? stealthImage : enemyImages[enemy.type];
+                    ctx.drawImage(image, enemy.x, enemy.y, config.width, config.height);
                     ctx.restore();
 
                     enemyShoot(enemy);
 
                     bullets.forEach((bullet, bulletIndex) => {
-                        if (checkCollision(bullet, enemy) && enemy.opacity > 0.5) { // ステルス機関連: 透明度50%以上で当たり判定
+                        if (checkCollision(bullet, enemy) && enemy.opacity > 0.5) {
                             enemy.isExploding = true;
                             enemy.explosionStart = Date.now();
                             bullets.splice(bulletIndex, 1);
@@ -903,7 +937,7 @@
                                 spawnLevelUpPoint(enemy.x, enemy.y);
                                 totalEnemiesKilledForLevel = 0;
                             }
-                            if (enemy.isStealth) { // ライフ回復ポイント関連: ステルス機破壊時に生成
+                            if (enemy.isStealth) {
                                 spawnLifeUpPoint(enemy.x, enemy.y);
                             }
                             hitSound.currentTime = 0;
@@ -916,7 +950,7 @@
                     });
 
                     lasers.forEach((laser, laserIndex) => {
-                        if (checkCollision(laser, enemy) && enemy.opacity > 0.5) { // ステルス機関連: 透明度50%以上で当たり判定
+                        if (checkCollision(laser, enemy) && enemy.opacity > 0.5) {
                             enemy.isExploding = true;
                             enemy.explosionStart = Date.now();
                             freeSpeechPoints += config.points * weaponLevel;
@@ -932,7 +966,7 @@
                                 spawnLevelUpPoint(enemy.x, enemy.y);
                                 totalEnemiesKilledForLevel = 0;
                             }
-                            if (enemy.isStealth) { // ライフ回復ポイント関連: ステルス機破壊時に生成
+                            if (enemy.isStealth) {
                                 spawnLifeUpPoint(enemy.x, enemy.y);
                             }
                             hitSound.currentTime = 0;
@@ -944,7 +978,7 @@
                         }
                     });
 
-                    if (checkCollision(player, enemy) && enemy.opacity > 0.5) { // ステルス機関連: 透明度50%以上で当たり判定
+                    if (checkCollision(player, enemy) && enemy.opacity > 0.5) {
                         player.life--;
                         enemies.splice(enemyIndex, 1);
                         hitSound.currentTime = 0;
@@ -1032,7 +1066,6 @@
                 }
             });
 
-            // ライフ回復ポイント関連
             lifeUpPoints.forEach((point, pointIndex) => {
                 if (Date.now() - point.spawnTime > point.lifespan) {
                     lifeUpPoints.splice(pointIndex, 1);
@@ -1045,7 +1078,7 @@
                 if (checkCollision(player, point)) {
                     if (player.life < player.maxLife) {
                         player.life++;
-                        levelUpSound.currentTime = 0; // ライフ回復時も効果音を再生
+                        levelUpSound.currentTime = 0;
                         levelUpSound.play().catch(error => console.error("Level up sound playback failed:", error));
                     }
                     lifeUpPoints.splice(pointIndex, 1);
@@ -1088,15 +1121,33 @@
 
         function startGame() {
             if (isMobileDevice()) return;
-            gameRunning = true;
-            gamePaused = false;
-            isLifeZero = false;
-            gameStartTime = Date.now();
+
             startScreen.style.display = 'none';
             controlButton.style.display = 'none';
-            pauseButton.style.display = 'block';
-            backgroundMusic.play();
-            requestAnimationFrame(gameLoop);
+            countdownScreen.style.display = 'block';
+
+            let countdown = 3;
+            countdownScreen.textContent = countdown;
+
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                if (countdown > 0) {
+                    countdownScreen.textContent = countdown;
+                } else {
+                    countdownScreen.textContent = 'GO!';
+                    setTimeout(() => {
+                        countdownScreen.style.display = 'none';
+                        gameRunning = true;
+                        gamePaused = false;
+                        isLifeZero = false;
+                        gameStartTime = Date.now();
+                        pauseButton.style.display = 'block';
+                        backgroundMusic.play();
+                        requestAnimationFrame(gameLoop);
+                    }, 500);
+                    clearInterval(countdownInterval);
+                }
+            }, 1000);
         }
 
         startButton.addEventListener('click', startGame);
