@@ -293,6 +293,8 @@
         let gamePaused = false;
         let gameStartTime = 0;
         let isLifeZero = false;
+        let pauseStartTime = 0; // 一時停止開始時刻
+        let totalPausedTime = 0; // 一時停止の合計時間
 
         const friction = 0.95;
         const bulletBase = { width: 5, height: 10, speed: 7, color: 'white' };
@@ -412,7 +414,7 @@
         function spawnEnemy() {
             const type = Math.floor(Math.random() * enemyConfigs.length);
             const config = enemyConfigs[type];
-            const elapsedTime = (Date.now() - gameStartTime) / 1000;
+            const elapsedTime = ((Date.now() - totalPausedTime) - gameStartTime) / 1000; // 一時停止時間を考慮
             const speedMultiplier = Math.min(1 + (elapsedTime / 10) * speedIncreaseRate, maxSpeedMultiplier);
             const adjustedSpeed = config.speed * speedMultiplier;
 
@@ -691,6 +693,8 @@
             spawnInterval = 1500;
             lastSpawnUpdate = Date.now();
             gameStartTime = Date.now();
+            totalPausedTime = 0; // リセット時に一時停止時間も初期化
+            pauseStartTime = 0;  // 一時停止開始時刻もリセット
             backgroundMusic.currentTime = 0;
             backgroundMusic.play();
             requestAnimationFrame(gameLoop);
@@ -703,6 +707,7 @@
         function pauseGame() {
             if (gameRunning && !gamePaused) {
                 gamePaused = true;
+                pauseStartTime = Date.now(); // 一時停止開始時刻を記録
                 backgroundMusic.pause();
                 controlModal.show();
             }
@@ -710,6 +715,7 @@
 
         function resumeGame() {
             if (gameRunning && gamePaused) {
+                totalPausedTime += Date.now() - pauseStartTime; // 一時停止時間を累積
                 gamePaused = false;
                 backgroundMusic.play();
                 controlModal.hide();
@@ -839,7 +845,8 @@
                 ctx.fillText(`Enemies Killed: ${enemiesKilled}`, 10, 60);
                 ctx.fillText(`Enemies Killed After Lv8: ${enemiesKilledAfterLevel8}`, 10, 80);
                 ctx.fillText(`Spawn Interval: ${Math.round(spawnInterval)}ms`, 10, 100);
-                ctx.fillText(`Speed Multiplier: ${Math.min(1 + ((Date.now() - gameStartTime) / 10000) * speedIncreaseRate, maxSpeedMultiplier).toFixed(2)}x`, 10, 120);
+                const elapsedTime = ((Date.now() - totalPausedTime) - gameStartTime) / 1000;
+                ctx.fillText(`Speed Multiplier: ${Math.min(1 + (elapsedTime / 10) * speedIncreaseRate, maxSpeedMultiplier).toFixed(2)}x`, 10, 120);
                 if (boss) ctx.fillText(`Boss Health: ${boss.health}/${bossConfig.maxHealth}`, 10, 140);
 
                 gameRunning = false;
@@ -1153,7 +1160,7 @@
                 lastEnemySpawn = Date.now();
             }
 
-            const elapsedTime = (Date.now() - gameStartTime) / 1000;
+            const elapsedTime = ((Date.now() - totalPausedTime) - gameStartTime) / 1000; // 一時停止時間を考慮した経過時間
             const speedMultiplier = Math.min(1 + (elapsedTime / 10) * speedIncreaseRate, maxSpeedMultiplier);
 
             ctx.fillStyle = 'white';
@@ -1199,6 +1206,7 @@
                         gamePaused = false;
                         isLifeZero = false;
                         gameStartTime = Date.now();
+                        totalPausedTime = 0; // ゲーム開始時に一時停止時間初期化
                         pauseButton.style.display = 'block';
                         backgroundMusic.play();
                         requestAnimationFrame(gameLoop);
