@@ -108,6 +108,29 @@
             font-size: 48px;
             font-weight: bold;
         }
+        /* ジョイスティック用のスタイル */
+        #joystick {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 100px;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: none;
+            touch-action: none;
+        }
+        #shootButton {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 0, 0, 0.5);
+            border-radius: 50%;
+            display: none;
+            touch-action: none;
+        }
     </style>
 </head>
 <body>
@@ -151,6 +174,11 @@
                         <li>移動: 矢印キー または W/A/S/D</li>
                         <li>射撃: スペースキー</li>
                     </ul>
+                    <p><strong>タッチ操作 (モバイル):</strong></p>
+                    <ul>
+                        <li>左側ジョイスティックで移動と回転</li>
+                        <li>右側ボタンで射撃</li>
+                    </ul>
                     <img src="pop.png" alt="広告" class="ad-image">
                 </div>
                 <div class="modal-footer">
@@ -185,6 +213,10 @@
         あなたのブラウザはaudio要素をサポートしていません。
     </audio>
 
+    <!-- タッチコントロール要素 -->
+    <div id="joystick"></div>
+    <div id="shootButton"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const canvas = document.getElementById('gameCanvas');
@@ -207,6 +239,8 @@
         const bossExplodeSound = document.getElementById('bossExplodeSound');
         const mobileMessage = document.getElementById('mobileMessage');
         const controlModal = new bootstrap.Modal(document.getElementById('controlModal'));
+        const joystick = document.getElementById('joystick');
+        const shootButton = document.getElementById('shootButton');
 
         backgroundMusic.volume = 0.5;
         shootSound.volume = 0.7;
@@ -255,11 +289,12 @@
 
         function checkImagesLoaded() {
             if (playerImageLoaded && enemyImagesLoaded === MAX_ENEMIES && laserImageLoaded && bossImageLoaded && stealthImageLoaded && levelImageLoaded && lifeImageLoaded) {
+                // モバイルメッセージを非表示にし、タッチコントロールを表示
+                startScreen.style.display = 'block';
+                controlButton.style.display = 'block';
                 if (isMobileDevice()) {
-                    mobileMessage.style.display = 'block';
-                } else {
-                    startScreen.style.display = 'block';
-                    controlButton.style.display = 'block';
+                    joystick.style.display = 'block';
+                    shootButton.style.display = 'block';
                 }
             }
         }
@@ -358,11 +393,95 @@
             KeyW: false, KeyS: false, KeyA: false, KeyD: false, Space: false
         };
 
+        // タッチコントロール変数
+        let moveTouchId = null;
+        let shootTouchId = null;
+        let moveBaseX = 0;
+        let moveBaseY = 0;
+        let moveCurrentX = 0;
+        let moveCurrentY = 0;
+        let isShooting = false;
+        let shootInterval = null;
+        const shootDelay = 200; // 射撃間隔 (ms)
+
         document.addEventListener('keydown', (e) => {
             if (e.code in keys) keys[e.code] = true;
             if (e.code === 'Space' && gameRunning && !gamePaused) shoot();
         });
         document.addEventListener('keyup', (e) => { if (e.code in keys) keys[e.code] = false; });
+
+        // タッチイベントの追加
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+        canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+        function handleTouchStart(e) {
+            e.preventDefault();
+            for (let touch of e.changedTouches) {
+                const rect = canvas.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                if (x < canvas.width / 2) {
+                    // 左側: 移動
+                    if (moveTouchId === null) {
+                        moveTouchId = touch.identifier;
+                        moveBaseX = x;
+                        moveBaseY = y;
+                        moveCurrentX = x;
+                        moveCurrentY = y;
+                    }
+                } else {
+                    // 右側: 射撃
+                    if (shootTouchId === null) {
+                        shootTouchId = touch.identifier;
+                        startShooting();
+                    }
+                }
+            }
+        }
+
+        function handleTouchMove(e) {
+            e.preventDefault();
+            for (let touch of e.changedTouches) {
+                if (touch.identifier === moveTouchId) {
+                    const rect = canvas.getBoundingClientRect();
+                    moveCurrentX = touch.clientX - rect.left;
+                    moveCurrentY = touch.clientY - rect.top;
+                }
+            }
+        }
+
+        function handleTouchEnd(e) {
+            e.preventDefault();
+            for (let touch of e.changedTouches) {
+                if (touch.identifier === moveTouchId) {
+                    moveTouchId = null;
+                    // 移動停止
+                    player.velocityX = 0;
+                    player.velocityY = 0;
+                } else if (touch.identifier === shootTouchId) {
+                    shootTouchId = null;
+                    stopShooting();
+                }
+            }
+        }
+
+        function startShooting() {
+            if (!isShooting) {
+                isShooting = true;
+                shoot();
+                shootInterval = setInterval(shoot, shootDelay);
+            }
+        }
+
+        function stopShooting() {
+            isShooting = false;
+            if (shootInterval) {
+                clearInterval(shootInterval);
+                shootInterval = null;
+            }
+        }
 
         function shoot() {
             const bulletLevel = Math.min(weaponLevel, MAX_WEAPON_LEVEL);
@@ -649,17 +768,32 @@
         }
 
         function movePlayer() {
-            const angle = player.rotation;
-            if (keys.ArrowUp || keys.KeyW) {
-                player.velocityX += Math.cos(angle) * player.speed;
-                player.velocityY += Math.sin(angle) * player.speed;
+            if (moveTouchId !== null) {
+                // タッチ移動
+                const dx = moveCurrentX - moveBaseX;
+                const dy = moveCurrentY - moveBaseY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance > 0) {
+                    const angle = Math.atan2(dy, dx);
+                    player.rotation = angle;
+                    const speed = Math.min(distance / 50, 1) * player.speed * 10; // 速度調整
+                    player.velocityX += Math.cos(angle) * speed;
+                    player.velocityY += Math.sin(angle) * speed;
+                }
+            } else {
+                // キーボード移動
+                const angle = player.rotation;
+                if (keys.ArrowUp || keys.KeyW) {
+                    player.velocityX += Math.cos(angle) * player.speed;
+                    player.velocityY += Math.sin(angle) * player.speed;
+                }
+                if (keys.ArrowDown || keys.KeyS) {
+                    player.velocityX -= Math.cos(angle) * player.speed;
+                    player.velocityY -= Math.sin(angle) * player.speed;
+                }
+                if (keys.ArrowLeft || keys.KeyA) player.rotation -= player.rotationSpeed;
+                if (keys.ArrowRight || keys.KeyD) player.rotation += player.rotationSpeed;
             }
-            if (keys.ArrowDown || keys.KeyS) {
-                player.velocityX -= Math.cos(angle) * player.speed;
-                player.velocityY -= Math.sin(angle) * player.speed;
-            }
-            if (keys.ArrowLeft || keys.KeyA) player.rotation -= player.rotationSpeed;
-            if (keys.ArrowRight || keys.KeyD) player.rotation += player.rotationSpeed;
 
             player.x += player.velocityX;
             player.y += player.velocityY;
@@ -1197,8 +1331,6 @@
         }
 
         function startGame() {
-            if (isMobileDevice()) return;
-
             startScreen.style.display = 'none';
             controlButton.style.display = 'none';
             countdownScreen.style.display = 'block';
